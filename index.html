@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoE 2 Crafting Simulator — PoE2DB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="segmented" role="group" aria-label="视图模式">
+        <button type="button" class="seg-btn active" id="btnModeWorkbench" data-mode="workbench" data-i18n="modeWorkbench">Workbench</button>
+        <button type="button" class="seg-btn" id="btnModeStash" data-mode="stash" data-i18n="modeStash">Currency Stash Sim</button>
+        <button type="button" class="seg-btn" id="btnModeRegex" data-mode="regex" data-i18n="modeRegex">Regex Tool</button>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <div class="segmented" role="group" aria-label="Language">
+        <button type="button" class="seg-btn" data-lang="cn">简中</button>
+        <button type="button" class="seg-btn" data-lang="tw">繁體</button>
+        <button type="button" class="seg-btn active" data-lang="us">EN</button>
+      </div>
+      <a class="btn btn-ghost" id="btnPoe2dbRef" href="https://poe2db.tw/us/Modifiers" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        <span data-i18n="poe2dbRef">PoE2DB Reference</span>
+      </a>
+      <div class="topbar-craft-actions" id="craftingTopActions">
+        <button type="button" class="btn btn-ghost" id="btnUndo" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+          <span data-i18n="undo">Undo</span>
+        </button>
+        <button type="button" class="btn btn-ghost" id="btnRedo" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>
+          <span data-i18n="redo">Redo</span>
+        </button>
+        <button type="button" class="btn btn-ghost" id="btnResetItem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
+          <span data-i18n="resetItem">Reset Base</span>
+        </button>
+        <button type="button" class="btn btn-primary" id="btnCopyItem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span data-i18n="copyItem">Copy Item</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 悬浮全局状态与确认提示条（无论滚动到何处均在视口中央顶部可见） -->
+  <div class="status-feedback hidden" id="feedbackBanner" role="status" aria-live="polite"></div>
+
+  <!-- 共享底材配置栏（仿真模式与工作台共享） -->
+  <section class="base-toolbar" id="baseToolbar" aria-label="底材选择栏">
+    <div class="base-toolbar-grid">
+      <div class="field">
+        <label for="categorySelect" data-i18n="catLabel">装备分类（81 类全收录）</label>
+        <select id="categorySelect"></select>
+      </div>
+      <div class="field">
+        <label for="baseSelect" data-i18n="baseLabel">底材类型</label>
+        <select id="baseSelect"></select>
+      </div>
+      <div class="field">
+        <label for="ilvlInput" data-i18n="ilvlLabel">物品等级 (iLvl)</label>
+        <div class="inline-stepper">
+          <input type="number" id="ilvlInput" min="1" max="100" value="84" />
+          <button type="button" class="mini-chip" data-ilvl="65">65</button>
+          <button type="button" class="mini-chip" data-ilvl="78">78</button>
+          <button type="button" class="mini-chip" data-ilvl="82">82</button>
+          <button type="button" class="mini-chip" data-ilvl="84">84</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="qualityInput" data-i18n="qualLabel">品质 (%)</label>
+        <div class="inline-stepper">
+          <input type="number" id="qualityInput" min="0" max="30" value="20" />
+          <button type="button" class="mini-chip" data-qual="0">0%</button>
+          <button type="button" class="mini-chip" data-qual="20">20%</button>
+          <button type="button" class="mini-chip" data-qual="30">30%</button>
+        </div>
+      </div>
+      <div class="field">
+        <label data-i18n="socketsLabel">插槽与奥杜尔秘符</label>
+        <div class="inline-stepper">
+          <span class="badge-muted" id="socketStatusBadge">0 / 2 孔</span>
+          <button type="button" class="mini-chip" id="btnPunchSocket" data-i18n="punchSocket">巧匠石打孔 (+1)</button>
+          <button type="button" class="mini-chip" id="btnClearSockets" data-i18n="clearSockets">清空插槽</button>
+        </div>
+      </div>
+    </div>
+    <!-- 奥杜尔秘符镶嵌开关条 -->
+    <div class="aldur-bar" id="aldurBar"></div>
+  </section>
+
+  <!-- 1.0 赛季通货预测独立可开关方框（体验尝鲜 · 工作台与仿真模式共享） -->
+  <section class="s10-box" id="season10Box" aria-label="1.0 赛季通货预测（体验尝鲜）">
+    <div class="s10-header">
+      <div class="s10-title-group">
+        <span class="s10-crest" aria-hidden="true">1.0</span>
+        <h2 class="s10-title" data-i18n="s10Title">1.0 赛季通货预测（体验尝鲜）</h2>
+        <span class="s10-badge" data-i18n="s10Badge">瓦尔克拉斯征服者 · 预计 2026-12-12 上线</span>
+      </div>
+      <div class="s10-header-actions">
+        <div class="s10-demo-actions" id="s10DemoActions">
+          <button type="button" class="mini-chip" id="btnS10Demo64" data-i18n="s10DemoRare64">生成 Lv64 测试黄装</button>
+          <button type="button" class="mini-chip" id="btnS10Demo84" data-i18n="s10DemoRare84">生成 Lv84 测试黄装</button>
+        </div>
+        <button type="button" class="s10-switch-btn active" id="btnToggleSeason10" aria-expanded="true">
+          <span class="s10-switch-dot" aria-hidden="true"></span>
+          <span id="s10ToggleLabel" data-i18n="s10ToggleOn">已开启 · 点击收起</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="s10-collapsed-hint hidden" id="s10CollapsedHint" data-i18n="s10SwitchDesc">
+      基于 PoE2DB 1.0 解包词条与官方「Conquerors of Wraeclast」专题：攻城宝库产出 6 种新通货（≤Lv64 熔炉标记 / ≥Lv65 鲜血血瓶）
+    </p>
+
+    <div class="s10-body" id="s10Body">
+      <div class="s10-notice" data-i18n="s10Notice">
+        【体验尝鲜 · 以 1.0 正式上线补丁为准】机制流程：先选中稀有装备上的目标词缀打上 [Forgemark] / [Bloodmark] 标记，再点击「重铸标记词缀」一次性替换为永久锁定的「破裂词缀」（此后混沌石/剥离石/神圣石均不会改变该破裂词缀）。注：三种血瓶英文原版均为替换自选「后缀 (suffix)」；其血脉专属高阶词缀池待 12 月补丁正式确认，当前暂以 Lv65+ 后缀池模拟。
+      </div>
+
+      <div class="s10-wings">
+        <div class="s10-wing s10-wing-forge">
+          <div class="s10-wing-head">
+            <span data-i18n="s10ForgeGroupTitle">前期熔炉标记 [Forgemark]（最高物等 64 · 任选前后缀）</span>
+            <span class="s10-wing-tag" data-i18n="s10MaxLvTag">≤iLvl 64 · 任意词缀</span>
+          </div>
+          <div class="s10-grid" id="s10ForgeGrid"></div>
+        </div>
+
+        <div class="s10-wing s10-wing-blood">
+          <div class="s10-wing-head">
+            <span data-i18n="s10BloodGroupTitle">终局鲜血血瓶 [Bloodmark]（最低词缀等级 65 · 仅限后缀）</span>
+            <span class="s10-wing-tag" data-i18n="s10MinLvTag">Lv65+ · 仅限后缀</span>
+          </div>
+          <div class="s10-grid" id="s10BloodGrid"></div>
+        </div>
+      </div>
+
+      <!-- 交互区：目标词缀选择 / 标记重铸定型 -->
+      <div class="s10-action-bar hidden" id="s10ActionBar"></div>
+    </div>
+  </section>
+
+  <!-- 模式 A：工作台对称三栏模式 -->
+  <main class="workspace" id="workbenchView">
+    <!-- 左栏：通货、预兆、精华、渎灵、神庙通货 -->
+    <aside class="panel panel-left" aria-label="做装工作台">
+      <section class="card card-full">
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab active" role="tab" aria-selected="true" data-craft-tab="currency" data-i18n="tabCurrency">通货与预兆</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-craft-tab="essence" data-i18n="tabEssence">精华</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-craft-tab="desecrate" data-i18n="tabDesecrate">渎灵 (深渊)</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-craft-tab="temple" data-i18n="tabTemple">神庙通货</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-currency">
+          <div class="section-label">
+            <span data-i18n="basicOrbs">基础与阶梯通货</span>
+            <span class="hint-text" data-i18n="clickOrbHint">点击通货对当前装备使用</span>
+          </div>
+          <div class="currency-grid" id="currencyGrid"></div>
+
+          <div class="section-label">
+            <span data-i18n="omensTitle">预兆 (Omens)</span>
+            <label class="toggle-inline">
+              <input type="checkbox" id="keepOmensToggle" />
+              <span data-i18n="keepOmens">锁定预兆（不消耗）</span>
+            </label>
+          </div>
+          <div class="omen-grid" id="omenGrid"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-essence">
+          <div class="info-banner" data-i18n="essenceNotice">普通/强效精华将魔法物品升级为稀有并必出指定词缀；完美/腐化/合金精华会从稀有物品移除 1 条词缀并必出指定词缀（支持左/右旋结晶预兆）。</div>
+          <div class="essence-filter-row">
+            <input type="search" id="essenceSearch" data-i18n-ph="essenceSearchPh" placeholder="搜索精华或合金词缀..." />
+            <div class="pill-group">
+              <button type="button" class="pill active" data-ess-filter="all" data-i18n="filterAll">全部</button>
+              <button type="button" class="pill" data-ess-filter="lesser" data-i18n="filterEssLesser">次级</button>
+              <button type="button" class="pill" data-ess-filter="normal" data-i18n="filterEssNormal">普通</button>
+              <button type="button" class="pill" data-ess-filter="greater" data-i18n="filterEssGreater">强效</button>
+              <button type="button" class="pill" data-ess-filter="perfect" data-i18n="filterEssPerfect">完美</button>
+              <button type="button" class="pill" data-ess-filter="special" data-i18n="filterEssSpecial">特殊</button>
+              <button type="button" class="pill" data-ess-filter="alloy" data-i18n="filterEssAlloy">合金</button>
+            </div>
+          </div>
+          <div class="essence-list" id="essenceList"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-desecrate">
+          <div class="info-banner" data-i18n="desecrateNotice">使用深渊遗骨为稀有物品注入渎灵词缀，随后 3 选 1 揭示。可搭配左右旋死灵、至高/领主/黑血、深渊回响与光明预兆。</div>
+          <div class="desecrate-bones" id="desecrateBones"></div>
+          <!-- 灵魂深井揭示区紧接遗骨按钮下方，无需滚动 -->
+          <div class="reveal-box hidden" id="revealBox">
+            <div class="reveal-head">
+              <h3 data-i18n="revealTitle">灵魂深井揭示（请选择 1 条词缀）</h3>
+              <button type="button" class="btn btn-sm btn-accent hidden" id="btnRerollReveal" data-i18n="rerollReveal">深渊回响重骰</button>
+            </div>
+            <div class="reveal-choices" id="revealChoices"></div>
+          </div>
+          <div class="desecrate-omens">
+            <div class="section-label"><span data-i18n="desecrateOmensTitle">深渊专用预兆</span></div>
+            <div class="omen-grid" id="desecrateOmenGrid"></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-temple">
+          <div class="info-banner" data-i18n="templeNotice">阿兹里神庙通货：包含注能装置（突破 20% 至最高 30% 品质）、献祭宝珠（升级腐化附魔）、建筑师宝珠与萃取石等。</div>
+          <div class="temple-list" id="templeList"></div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- 中栏：装备实时面板、槽位拆解、同类相加明细与通货统计 -->
+    <section class="panel panel-center" aria-label="装备预览与词缀结构">
+      <div class="item-stage">
+        <div class="view-mode-bar">
+          <div class="pill-group" role="group">
+            <button type="button" class="pill active" id="btnViewMerged" data-i18n="viewMerged">合并展示（游戏内最终属性）</button>
+            <button type="button" class="pill" id="btnViewSplit" data-i18n="viewSplit">词缀逐条拆解（Alt 视图）</button>
+          </div>
+          <div class="alt-badge" id="altHintPill">
+            <kbd>Alt</kbd> <span data-i18n="altHint">按住查看词缀拆解</span>
+          </div>
+          <span class="affix-counter" id="affixCounter">0/3 · 0/3</span>
+        </div>
+
+        <div id="itemCardMount"></div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 data-i18n="slotTitle">词缀槽位结构（沙盒精细调整）</h2>
+          <span class="hint-text" data-i18n="slotHint">复合词缀只占 1 个槽位，剥离/混沌/破溃按整条生效</span>
+        </div>
+        <div class="slots-columns">
+          <div class="slot-group">
+            <div class="slot-group-title prefix-color">
+              <span data-i18n="prefixes">前缀 (Prefixes)</span>
+              <span id="prefixCountBadge">0 / 3</span>
+            </div>
+            <div class="slot-list" id="prefixSlots"></div>
+          </div>
+          <div class="slot-group">
+            <div class="slot-group-title suffix-color">
+              <span data-i18n="suffixes">后缀 (Suffixes)</span>
+              <span id="suffixCountBadge">0 / 3</span>
+            </div>
+            <div class="slot-list" id="suffixSlots"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="bottom-split">
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="mergeTitle">复合与同类相加明细</h2>
+            <span class="badge-muted" id="mergeCountBadge">0</span>
+          </div>
+          <div class="merge-breakdown" id="mergeBreakdown"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="costTitle">通货消耗与操作记录</h2>
+            <button type="button" class="mini-chip" id="btnClearLog" data-i18n="clearLog">清空统计</button>
+          </div>
+          <div class="cost-pills" id="costPills"></div>
+          <ul class="craft-log" id="craftLog"></ul>
+        </section>
+      </div>
+    </section>
+
+    <!-- 右栏：编年史词缀池与权重概率 -->
+    <aside class="panel panel-right" aria-label="PoE2DB 词缀池">
+      <section class="card card-full">
+        <div class="card-head">
+          <h2 data-i18n="poolTitle">编年史词缀池与概率</h2>
+          <span class="badge-muted" id="poolStatsBadge">--</span>
+        </div>
+
+        <div class="pool-tabs" id="poolTabs">
+          <button type="button" class="pill active" data-pool="normal" data-i18n="poolNormal">基础池</button>
+          <button type="button" class="pill" data-pool="desecrated" data-i18n="poolDesecrated">渎灵</button>
+          <button type="button" class="pill" data-pool="essence" data-i18n="poolEssence">精华</button>
+          <button type="button" class="pill" data-pool="perfect_essence" data-i18n="poolPerfectEssence">完美/合金</button>
+          <button type="button" class="pill" data-pool="corrupted" data-i18n="poolCorrupted">腐化附魔</button>
+          <button type="button" class="pill hidden" data-pool="extra" id="btnExtraPool"></button>
+          <button type="button" class="pill hidden" data-pool="extra2" id="btnExtraPool2"></button>
+        </div>
+
+        <div class="pool-controls">
+          <input type="search" id="modSearchInput" data-i18n-ph="poolSearchPh" placeholder="搜索词缀效果、名称或英文族..." />
+          <div class="pool-filter-row">
+            <div class="pill-group">
+              <button type="button" class="pill active" data-gen-filter="all" data-i18n="filterAll">全部</button>
+              <button type="button" class="pill" data-gen-filter="1" data-i18n="prefixShort">前缀</button>
+              <button type="button" class="pill" data-gen-filter="2" data-i18n="suffixShort">后缀</button>
+            </div>
+            <label class="toggle-inline">
+              <input type="checkbox" id="filterIlvlToggle" checked />
+              <span data-i18n="onlyIlvl">仅看当前 iLvl</span>
+            </label>
+          </div>
+          <div class="tag-filter-bar" id="tagFilterBar"></div>
+        </div>
+
+        <div class="mod-pool-list" id="modPoolList"></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- 模式 B：仿真做装（对称通货仓库祭坛 + 紧邻揭示区 + 分页工具抽屉，零上下滚动） -->
+  <section class="stash-workspace hidden" id="stashView" aria-label="仿真做装通货仓库页">
+    <div class="stash-layout">
+      <div class="stash-board-wrap">
+        <div class="stash-cursor-bar">
+          <div class="cursor-status">
+            <span data-i18n="stashActiveOrb">当前手持通货：</span>
+            <span id="stashActiveToolLabel" class="cursor-active-name" data-i18n="stashNone">未选中</span>
+          </div>
+          <div class="stash-cursor-actions">
+            <label class="toggle-inline stash-toggle">
+              <input type="checkbox" id="stashKeepOmensToggle" />
+              <span data-i18n="keepOmens">锁定预兆（不消耗）</span>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnDropCursorTool" data-i18n="stashClearTool">放下手持通货</button>
+          </div>
+        </div>
+
+        <!-- 游戏内通货仓库盘（对称三翼祭坛 + 即时揭示 + 免滚动分类抽屉） -->
+        <div class="poe-stash-board">
+          <div class="stash-top-grid">
+            <!-- 左翼：3×5 阶梯通货 -->
+            <div class="stash-col-left" id="stashLeftOrbs"></div>
+
+            <!-- 中央祭坛：顶排 5 核心通货 + 居中装备底座 -->
+            <div class="stash-col-center">
+              <div class="stash-top-orbs" id="stashTopOrbs"></div>
+
+              <div class="stash-pedestal-row">
+                <button type="button" class="stash-item-pedestal" id="stashItemPedestal" title="点击应用当前手持通货">
+                  <div class="pedestal-rarity-glow" id="pedestalGlow"></div>
+                  <img id="pedestalIcon" src="https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Bows/Bows5.webp" alt="Equipped Base Item" />
+                  <div class="pedestal-sockets" id="pedestalSockets"></div>
+                  <div class="pedestal-hint" data-i18n="stashClickItemHint">点击中央装备槽即可应用当前手持通货</div>
+                </button>
+              </div>
+            </div>
+
+            <!-- 右翼：品质与打孔工具 -->
+            <div class="stash-col-right">
+              <div class="stash-right-tools" id="stashRightTools"></div>
+            </div>
+          </div>
+
+          <!-- 仿真模式中的灵魂深井 3选1 揭示区：紧贴装备底座正下方，零下滑直达 -->
+          <div class="reveal-box stash-reveal-immediate hidden" id="stashRevealBox">
+            <div class="reveal-head">
+              <h3 data-i18n="revealTitle">灵魂深井揭示（请选择 1 条词缀）</h3>
+              <button type="button" class="btn btn-sm btn-accent hidden" id="btnStashRerollReveal" data-i18n="rerollReveal">深渊回响重骰</button>
+            </div>
+            <div class="reveal-choices stash-reveal-choices-grid" id="stashRevealChoices"></div>
+          </div>
+
+          <!-- 仓库下部快捷分类切换栏（避免所有模块纵向堆叠导致上下滑动） -->
+          <div class="stash-drawer-bar" role="tablist">
+            <button type="button" class="stash-tab active" data-stash-tab="abyss" data-i18n="stashTabAbyss">深渊与渎灵</button>
+            <button type="button" class="stash-tab" data-stash-tab="omens" data-i18n="stashTabOmens">常规预兆</button>
+            <button type="button" class="stash-tab" data-stash-tab="essence" data-i18n="stashTabEssence">精华</button>
+            <button type="button" class="stash-tab" data-stash-tab="temple" data-i18n="stashTabTemple">神庙通货</button>
+            <button type="button" class="stash-tab" data-stash-tab="aldur" data-i18n="stashTabAldur">奥杜尔秘符</button>
+            <button type="button" class="stash-tab" data-stash-tab="all" data-i18n="stashTabAll">全部展开</button>
+          </div>
+
+          <!-- 1. 深渊渎灵通货 + 深渊预兆栏 -->
+          <div class="stash-drawer-section" data-stash-section="abyss">
+            <div class="stash-sub-header" data-i18n="stashAbyssTitle">深渊渎灵通货与深渊预兆</div>
+            <div class="stash-grid-cards" id="stashAbyssGrid"></div>
+          </div>
+
+          <!-- 2. 其他预兆栏（与工作台模式完全一致） -->
+          <div class="stash-drawer-section hidden" data-stash-section="omens">
+            <div class="stash-sub-header stash-sub-header-row">
+              <span data-i18n="stashOmensTitle">预兆 (Omens)</span>
+            </div>
+            <div class="stash-grid-cards" id="stashOmenGrid"></div>
+          </div>
+
+          <!-- 3. 精华栏 -->
+          <div class="stash-drawer-section hidden" data-stash-section="essence">
+            <div class="stash-sub-header stash-sub-header-row">
+              <span data-i18n="stashEssenceTitle">精华 (Essences)</span>
+              <div class="stash-ess-controls">
+                <input type="search" id="stashEssenceSearch" class="stash-search-input" data-i18n-ph="stashEssSearchPh" placeholder="搜索精华..." />
+                <div class="pill-group stash-pill-group">
+                  <button type="button" class="pill active" data-stash-ess-filter="all" data-i18n="filterAll">全部</button>
+                  <button type="button" class="pill" data-stash-ess-filter="lesser" data-i18n="filterEssLesser">次级</button>
+                  <button type="button" class="pill" data-stash-ess-filter="normal" data-i18n="filterEssNormal">普通</button>
+                  <button type="button" class="pill" data-stash-ess-filter="greater" data-i18n="filterEssGreater">强效</button>
+                  <button type="button" class="pill" data-stash-ess-filter="perfect" data-i18n="filterEssPerfect">完美</button>
+                  <button type="button" class="pill" data-stash-ess-filter="special" data-i18n="filterEssSpecial">特殊</button>
+                  <button type="button" class="pill" data-stash-ess-filter="alloy" data-i18n="filterEssAlloy">合金</button>
+                </div>
+              </div>
+            </div>
+            <div class="stash-grid-cards stash-essence-grid" id="stashEssenceGrid"></div>
+          </div>
+
+          <!-- 4. 神庙通货栏 -->
+          <div class="stash-drawer-section hidden" data-stash-section="temple">
+            <div class="stash-sub-header" data-i18n="stashTempleTitle">神庙通货</div>
+            <div class="stash-grid-cards" id="stashTempleGrid"></div>
+          </div>
+
+          <!-- 5. 奥杜尔秘符栏 -->
+          <div class="stash-drawer-section hidden" data-stash-section="aldur">
+            <div class="stash-sub-header" data-i18n="stashAldurTitle">奥杜尔秘符</div>
+            <div class="stash-grid-cards" id="stashAldurGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧实时装备面板 + 复合词缀合并 + 消费统计（粘性跟随视口） -->
+      <div class="stash-inspector">
+        <div id="stashItemCardMount"></div>
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="mergeTitle">复合与同类相加明细</h2>
+            <span class="badge-muted" id="stashMergeBadge">0</span>
+          </div>
+          <div class="merge-breakdown" id="stashMergeBreakdown"></div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="costTitle">通货消耗与操作记录</h2>
+            <button type="button" class="mini-chip" id="btnStashClearLog" data-i18n="clearLog">重置统计</button>
+          </div>
+          <div class="cost-pills" id="stashCostPills"></div>
+          <ul class="craft-log" id="stashCraftLog"></ul>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <!-- 模式 C：词缀正则工具（引路石 Waystones / 石板碑牌 Tablets 交易站搜索正则生成器） -->
+  <section class="rex-workspace hidden" id="regexView" aria-label="PoE 2 Affix Regex Builder">
+    <div class="rex-topbar card">
+      <div class="rex-topbar-left">
+        <div class="segmented" id="rex-tabs" role="group" aria-label="Regex Target Type">
+          <button type="button" class="seg-btn active" data-tab="waystone" aria-pressed="true" id="rex-tab-waystone">Waystones</button>
+          <button type="button" class="seg-btn" data-tab="tablet" aria-pressed="false" id="rex-tab-tablet">Tablets</button>
+        </div>
+      </div>
+      <div class="rex-topbar-right">
+        <label class="rex-lang-field">
+          <span id="rex-language-label" class="hint-text">Output language</span>
+          <select id="rex-language" aria-labelledby="rex-language-label">
+            <option value="en">English</option>
+            <option value="cn">简体中文</option>
+            <option value="tw">繁體中文</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="rex-layout">
+      <div class="rex-col-main">
+        <!-- 基础筛选（石板类型 / 复活次数 / 稀有度 / 腐化状态） -->
+        <section class="card">
+          <div class="card-head">
+            <h2 id="rex-primary-heading">Waystones</h2>
+            <span class="badge-muted" id="rex-primary-badge">0</span>
+          </div>
+          <div id="rex-primary-body" class="rex-primary-body"></div>
+        </section>
+
+        <!-- 引路石阶级 + 引路石效果筛选（双卡并排或堆叠） -->
+        <div class="rex-waystone-row">
+          <section class="card" id="rex-tier-card" aria-labelledby="rex-tier-heading">
+            <div class="card-head">
+              <h2 id="rex-tier-heading">Waystone tier</h2>
+              <button type="button" class="mini-chip" id="rex-tier-clear">Clear</button>
+            </div>
+            <p class="hint-text" id="rex-tier-hint"></p>
+            <div class="rex-tier-grid" id="rex-tier-body"></div>
+          </section>
+
+          <section class="card" id="rex-summary-card" aria-labelledby="rex-summary-heading">
+            <div class="card-head">
+              <h2 id="rex-summary-heading">Waystone effect filters</h2>
+              <button type="button" class="mini-chip" id="rex-summary-clear">Clear</button>
+            </div>
+            <p class="hint-text" id="rex-summary-hint"></p>
+            <div class="rex-summary-grid" id="rex-summary-body"></div>
+          </section>
+        </div>
+
+        <!-- 高价值石板词缀（仅在 Tablets 标签页显示） -->
+        <section class="card hidden" id="rex-hv-card" aria-labelledby="rex-hv-heading">
+          <div class="card-head">
+            <h2 id="rex-hv-heading">High-value tablet affixes</h2>
+            <span class="badge-muted" id="rex-hv-count">0</span>
+          </div>
+          <p class="hint-text" id="rex-hv-hint"></p>
+          <div class="rex-hv-filters">
+            <div class="rex-hv-price-group">
+              <span class="hint-text" id="rex-hv-price-label">Min price</span>
+              <input id="rex-hv-price" type="number" inputmode="numeric" min="0" placeholder="Any" />
+              <select id="rex-hv-currency">
+                <option value="E">E</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+              </select>
+            </div>
+            <div class="pill-group" id="rex-hv-types"></div>
+          </div>
+          <div class="rex-hv-list" id="rex-hv-list"></div>
+        </section>
+
+        <!-- 词缀筛选主列表 -->
+        <section class="card" aria-labelledby="rex-affix-heading">
+          <div class="card-head">
+            <h2 id="rex-affix-heading">Affix filters</h2>
+            <span class="badge-muted" id="rex-visible-count">0</span>
+          </div>
+
+          <div class="rex-hot-bar" id="rex-hot-bar">
+            <span class="rex-hot-label" id="rex-hot-label">Hot affixes</span>
+          </div>
+
+          <div class="rex-affix-controls">
+            <input id="rex-search" type="search" autocomplete="off" spellcheck="false" placeholder="e.g. ignite, resistance, life" />
+            <div class="rex-control-row">
+              <div class="pill-group" role="group">
+                <button type="button" class="pill active" id="rex-toggle-prefix" aria-pressed="true">Prefix</button>
+                <button type="button" class="pill active" id="rex-toggle-suffix" aria-pressed="true">Suffix</button>
+              </div>
+              <div class="rex-control-end">
+                <div class="segmented" id="rex-match-mode" role="group">
+                  <button type="button" class="seg-btn active" data-match="all" aria-pressed="true" id="rex-match-all">Match all</button>
+                  <button type="button" class="seg-btn" data-match="any" aria-pressed="false" id="rex-match-any">Match any</button>
+                </div>
+                <button type="button" class="mini-chip" id="rex-clear-selected">Clear selected</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="rex-affix-list" class="rex-affix-groups"></div>
+        </section>
+      </div>
+
+      <!-- 右侧粘性面板：已选条件 + 交易站正则预览 + 最爱预设 -->
+      <aside class="rex-col-side">
+        <section class="card">
+          <div class="card-head">
+            <h2 id="rex-result-heading">Selected conditions</h2>
+            <span class="badge-muted" id="rex-condition-count">0</span>
+          </div>
+
+          <div id="rex-summary"></div>
+
+          <div class="rex-regex-box">
+            <div class="rex-regex-head">
+              <span id="rex-regex-heading">Trade search box</span>
+              <span class="badge-muted" id="rex-regex-length">0 / 250</span>
+            </div>
+            <pre class="rex-regex-source empty" id="rex-regex-source"></pre>
+            <p class="rex-regex-msg" id="rex-regex-message" role="status" aria-live="polite"></p>
+          </div>
+
+          <div class="rex-actions">
+            <button type="button" class="btn btn-primary rex-btn-grow" id="rex-copy" disabled>Copy regex</button>
+            <button type="button" class="btn btn-ghost" id="rex-clear">Clear all</button>
+          </div>
+
+          <p class="hint-text" id="rex-status" role="status"></p>
+        </section>
+
+        <section class="card" aria-labelledby="rex-fav-heading">
+          <div class="card-head">
+            <h2 id="rex-fav-heading">Favorites</h2>
+            <span class="badge-muted" id="rex-fav-count">0</span>
+          </div>
+          <div class="rex-fav-row">
+            <input id="rex-fav-name" type="text" maxlength="24" placeholder="Name this preset" />
+            <button type="button" class="btn btn-sm btn-primary" id="rex-fav-save">Save</button>
+          </div>
+          <div class="rex-fav-list" id="rex-fav-list"></div>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+  <!-- 底部免费声明与防倒卖维权指引（双模式共享，支持三语切换且默认英文） -->
+  <footer class="site-footer" aria-label="Free Tool & Anti-Resale Notice">
+    <div class="footer-inner">
+      <div class="footer-head">
+        <div class="footer-title-group">
+          <svg class="footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+          <h2 class="footer-title" data-i18n="footerTitle">100% Free &amp; Open Tool</h2>
+          <span class="footer-badge" data-i18n="footerBadge">Free to Use · No Resale</span>
+        </div>
+        <a class="btn btn-primary btn-sm footer-bili-btn" href="https://space.bilibili.com/7132721" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="2" y="6" width="20" height="14" rx="3"/>
+            <path d="m7 2 4 4"/><path d="m17 2-4 4"/>
+            <path d="M9 11v4"/><path d="M15 11v4"/>
+          </svg>
+          <span data-i18n="footerBiliBtn">Bilibili: LMemory氿忆</span>
+        </a>
+      </div>
+
+      <div class="footer-grid">
+        <div class="footer-col">
+          <p class="footer-lead" data-i18n="footerFreeLead">
+            This tool is provided completely free of charge by the author. All features are directly accessible without payment or license purchase. The author has never authorized any individual or organization to sell this tool, its source code, or related files.
+          </p>
+          <div class="footer-alert" data-i18n="footerScamAlert">
+            If you paid to obtain this tool or related files, please note: that charge has nothing to do with the author. The author did not receive your payment and cannot issue a refund. Please contact the seller or platform that charged you directly for a refund; if they are unreachable or suspected of fraud, file a complaint via your payment platform, consumer protection agency, or regulatory authority, and keep your payment receipts.
+          </div>
+          <p class="footer-note" data-i18n="footerDisclaimer">
+            This statement only clarifies the free nature of this tool and does not constitute a guarantee or commitment regarding any third-party actions.
+          </p>
+        </div>
+
+        <div class="footer-col footer-col-sponsor">
+          <p class="footer-lead">
+            <span data-i18n="footerSponsorPre">If you find this tool helpful, feel free to voluntarily support the author on Bilibili: </span><a class="footer-link" href="https://space.bilibili.com/7132721" target="_blank" rel="noopener noreferrer">LMemory氿忆</a><span data-i18n="footerSponsorPost">.</span>
+          </p>
+          <p class="footer-desc" data-i18n="footerSponsorDesc">
+            Sponsorship is completely voluntary and does not constitute a purchase or paid service, nor does it grant extra features, services, licenses, or priority support, and it does not affect your normal use of this tool.
+          </p>
+          <p class="footer-note" data-i18n="footerSponsorNote">
+            The author has not authorized any third party to sell this tool; if you obtained it through payment, that charge is unrelated to the author and the author cannot process refunds—please contact the payee directly. Thank you for your support.
+          </p>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="data/catalog.js"></script>
+  <script src="data/regexData.js"></script>
+  <script src="src/i18n.js"></script>
+  <script src="src/craftingEngine.js"></script>
+  <script src="src/regexTool.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
