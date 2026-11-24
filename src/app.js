@@ -983,7 +983,7 @@
       const disabled = wrongEquip || item.corrupted || item.markReforged;
       const selected = state.activeMarkId === c.id;
       const isBlood = c.markKind === "bloodmark";
-      const subMeta = `${loc(c, "equipLabel")} · ${isBlood ? `Lv${c.minModLvl}+ (${tr("suffixShort")})` : `≤Lv${c.maxItemLvl}`}`;
+      const subMeta = `${loc(c, "equipLabel")} · ${isBlood ? `Lv${c.minModLvl}+` : `≤Lv${c.maxItemLvl}`}`;
       return `
         <button type="button" class="s10-orb ${isBlood ? "is-blood" : ""} ${selected ? "selected" : ""}" data-s10-orb="${c.id}" ${disabled ? "disabled" : ""} title="${escapeHtml(loc(c, "desc"))}">
           <span class="s10-stack-badge">${c.stackSize}</span>

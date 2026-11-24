@@ -103,7 +103,7 @@
       equipGroup: "weapon_quiver",
       maxItemLvl: 100,
       minModLvl: 65,
-      suffixOnly: true,
+      suffixOnly: false,
       stackSize: 20,
       name: "科马凯的血瓶",
       name_tw: "科馬凱的血瓶",
@@ -111,9 +111,9 @@
       equipLabel: "武器 / 箭袋",
       equipLabel_tw: "武器 / 箭袋",
       equipLabel_us: "Weapon / Quiver",
-      desc: "最低词缀等级 65 · 稀有武器/箭袋：将自选 1 条「后缀词缀」替换为 [Bloodmark]",
-      desc_tw: "最低詞綴等級 65 · 稀有武器/箭袋：將自選 1 條「後綴詞綴」替換為 [Bloodmark]",
-      desc_us: "Min Mod Level 65 · Rare Weapon/Quiver: Replace a chosen suffix modifier with [Bloodmark]",
+      desc: "最低词缀等级 65 · 稀有武器/箭袋：将自选任意 1 条词缀替换为 [Bloodmark]",
+      desc_tw: "最低詞綴等級 65 · 稀有武器/箭袋：將自選任意 1 條詞綴替換為 [Bloodmark]",
+      desc_us: "Min Mod Level 65 · Rare Weapon/Quiver: Replace a chosen modifier with [Bloodmark]",
       icon: S10_ICONS.bloodvial_komaki
     },
     {
@@ -122,7 +122,7 @@
       equipGroup: "armour_belt",
       maxItemLvl: 100,
       minModLvl: 65,
-      suffixOnly: true,
+      suffixOnly: false,
       stackSize: 20,
       name: "艾尔德拉的血瓶",
       name_tw: "艾爾德拉的血瓶",
@@ -130,9 +130,9 @@
       equipLabel: "护甲 / 腰带",
       equipLabel_tw: "護甲 / 腰帶",
       equipLabel_us: "Armour / Belt",
-      desc: "最低词缀等级 65 · 稀有护甲/腰带：将自选 1 条「后缀词缀」替换为 [Bloodmark]",
-      desc_tw: "最低詞綴等級 65 · 稀有護甲/腰帶：將自選 1 條「後綴詞綴」替換為 [Bloodmark]",
-      desc_us: "Min Mod Level 65 · Rare Armour/Belt: Replace a chosen suffix modifier with [Bloodmark]",
+      desc: "最低词缀等级 65 · 稀有护甲/腰带：将自选任意 1 条词缀替换为 [Bloodmark]",
+      desc_tw: "最低詞綴等級 65 · 稀有護甲/腰帶：將自選任意 1 條詞綴替換為 [Bloodmark]",
+      desc_us: "Min Mod Level 65 · Rare Armour/Belt: Replace a chosen modifier with [Bloodmark]",
       icon: S10_ICONS.bloodvial_eldra
     },
     {
@@ -141,7 +141,7 @@
       equipGroup: "jewellery",
       maxItemLvl: 100,
       minModLvl: 65,
-      suffixOnly: true,
+      suffixOnly: false,
       stackSize: 20,
       name: "瑞瑟瓦的血瓶",
       name_tw: "瑞瑟瓦的血瓶",
@@ -149,9 +149,9 @@
       equipLabel: "项链 / 戒指",
       equipLabel_tw: "項鍊 / 戒指",
       equipLabel_us: "Amulet / Ring",
-      desc: "最低词缀等级 65 · 稀有项链/戒指：将自选 1 条「后缀词缀」替换为 [Bloodmark]",
-      desc_tw: "最低詞綴等級 65 · 稀有項鍊/戒指：將自選 1 條「後綴詞綴」替換為 [Bloodmark]",
-      desc_us: "Min Mod Level 65 · Rare Amulet/Ring: Replace a chosen suffix modifier with [Bloodmark]",
+      desc: "最低词缀等级 65 · 稀有项链/戒指：将自选任意 1 条词缀替换为 [Bloodmark]",
+      desc_tw: "最低詞綴等級 65 · 稀有項鍊/戒指：將自選任意 1 條詞綴替換為 [Bloodmark]",
+      desc_us: "Min Mod Level 65 · Rare Amulet/Ring: Replace a chosen modifier with [Bloodmark]",
       icon: S10_ICONS.bloodvial_rithva
     }
   ];
@@ -1541,9 +1541,9 @@
       lines: [
         isBlood
           ? {
-              tpl: "[Bloodmark] 待重铸后缀槽位（重铸后转为 Lv65+ 随机破裂后缀）",
-              tpl_tw: "[Bloodmark] 待重鑄後綴欄位（重鑄後轉為 Lv65+ 隨機破裂後綴）",
-              tpl_us: "[Bloodmark] Marked Suffix Slot (Reforges into Lv65+ Fractured Suffix)",
+              tpl: "[Bloodmark] 待重铸词缀槽位（重铸后转为 Lv65+ 随机破裂词缀）",
+              tpl_tw: "[Bloodmark] 待重鑄詞綴欄位（重鑄後轉為 Lv65+ 隨機破裂詞綴）",
+              tpl_us: "[Bloodmark] Marked Affix Slot (Reforges into Lv65+ Fractured Mod)",
               ranges: [],
               values: []
             }
@@ -1591,9 +1591,9 @@
 
       let picked = null;
       if (markMod.markType === "bloodmark") {
-        picked = rollWeighted(getEligibleMods(catData, item, "normal", { targetRarity: "rare", genOnly: 2, minModLvl: 65 }));
+        picked = rollWeighted(getEligibleMods(catData, item, "normal", { targetRarity: "rare", minModLvl: 65 }));
         if (!picked) {
-          picked = rollWeighted(getEligibleMods(catData, item, "normal", { targetRarity: "rare", genOnly: 2 }));
+          picked = rollWeighted(getEligibleMods(catData, item, "normal", { targetRarity: "rare" }));
         }
       } else {
         picked = rollWeighted(getEligibleMods(catData, item, "normal", { targetRarity: "rare", maxModLvl: 64 }));
