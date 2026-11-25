@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoE 2 Trade Regex Tool — PoE2DB</title>
+  <script>
+    window.POE2_BASE_PATH = "../../";
+    window.POE2_PAGE = "tool1_regex";
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../styles/base.css" />
+  <link rel="stylesheet" href="../../styles/tool1_regex.css" />
+</head>
+<body>
+  <header class="topbar" id="sharedTopbar"></header>
+  <div class="status-feedback hidden" id="feedbackBanner" role="status" aria-live="polite"></div>
+
+  <!-- 工具 1：市集词缀正则生成器（引路石 Waystones / 石板碑牌 Tablets） -->
+  <section class="rex-workspace" id="regexView" aria-label="PoE 2 Affix Regex Builder">
+    <div class="rex-topbar card">
+      <div class="rex-topbar-left">
+        <div class="segmented" id="rex-tabs" role="group" aria-label="Regex Target Type">
+          <button type="button" class="seg-btn active" data-tab="waystone" aria-pressed="true" id="rex-tab-waystone">Waystones</button>
+          <button type="button" class="seg-btn" data-tab="tablet" aria-pressed="false" id="rex-tab-tablet">Tablets</button>
+        </div>
+      </div>
+      <div class="rex-topbar-right">
+        <label class="rex-lang-field">
+          <span id="rex-language-label" class="hint-text">Output language</span>
+          <select id="rex-language" aria-labelledby="rex-language-label">
+            <option value="en">English</option>
+            <option value="cn">简体中文</option>
+            <option value="tw">繁體中文</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="rex-layout">
+      <div class="rex-col-main">
+        <!-- 基础筛选（石板类型 / 复活次数 / 稀有度 / 腐化状态） -->
+        <section class="card">
+          <div class="card-head">
+            <h2 id="rex-primary-heading">Waystones</h2>
+            <span class="badge-muted" id="rex-primary-badge">0</span>
+          </div>
+          <div id="rex-primary-body" class="rex-primary-body"></div>
+        </section>
+
+        <!-- 引路石阶级 + 引路石效果筛选 -->
+        <div class="rex-waystone-row">
+          <section class="card" id="rex-tier-card" aria-labelledby="rex-tier-heading">
+            <div class="card-head">
+              <h2 id="rex-tier-heading">Waystone tier</h2>
+              <button type="button" class="mini-chip" id="rex-tier-clear">Clear</button>
+            </div>
+            <p class="hint-text" id="rex-tier-hint"></p>
+            <div class="rex-tier-grid" id="rex-tier-body"></div>
+          </section>
+
+          <section class="card" id="rex-summary-card" aria-labelledby="rex-summary-heading">
+            <div class="card-head">
+              <h2 id="rex-summary-heading">Waystone effect filters</h2>
+              <button type="button" class="mini-chip" id="rex-summary-clear">Clear</button>
+            </div>
+            <p class="hint-text" id="rex-summary-hint"></p>
+            <div class="rex-summary-grid" id="rex-summary-body"></div>
+          </section>
+        </div>
+
+        <!-- 高价值石板词缀（仅在 Tablets 标签页显示） -->
+        <section class="card hidden" id="rex-hv-card" aria-labelledby="rex-hv-heading">
+          <div class="card-head">
+            <h2 id="rex-hv-heading">High-value tablet affixes</h2>
+            <span class="badge-muted" id="rex-hv-count">0</span>
+          </div>
+          <p class="hint-text" id="rex-hv-hint"></p>
+          <div class="rex-hv-filters">
+            <div class="rex-hv-price-group">
+              <span class="hint-text" id="rex-hv-price-label">Min price</span>
+              <input id="rex-hv-price" type="number" inputmode="numeric" min="0" placeholder="Any" />
+              <select id="rex-hv-currency">
+                <option value="E">E</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+              </select>
+            </div>
+            <div class="pill-group" id="rex-hv-types"></div>
+          </div>
+          <div class="rex-hv-list" id="rex-hv-list"></div>
+        </section>
+
+        <!-- 词缀筛选主列表 -->
+        <section class="card" aria-labelledby="rex-affix-heading">
+          <div class="card-head">
+            <h2 id="rex-affix-heading">Affix filters</h2>
+            <span class="badge-muted" id="rex-visible-count">0</span>
+          </div>
+
+          <div class="rex-hot-bar" id="rex-hot-bar">
+            <span class="rex-hot-label" id="rex-hot-label">Hot affixes</span>
+          </div>
+
+          <div class="rex-affix-controls">
+            <input id="rex-search" type="search" autocomplete="off" spellcheck="false" placeholder="e.g. ignite, resistance, life" />
+            <div class="rex-control-row">
+              <div class="pill-group" role="group">
+                <button type="button" class="pill active" id="rex-toggle-prefix" aria-pressed="true">Prefix</button>
+                <button type="button" class="pill active" id="rex-toggle-suffix" aria-pressed="true">Suffix</button>
+              </div>
+              <div class="rex-control-end">
+                <div class="segmented" id="rex-match-mode" role="group">
+                  <button type="button" class="seg-btn active" data-match="all" aria-pressed="true" id="rex-match-all">Match all</button>
+                  <button type="button" class="seg-btn" data-match="any" aria-pressed="false" id="rex-match-any">Match any</button>
+                </div>
+                <button type="button" class="mini-chip" id="rex-clear-selected">Clear selected</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="rex-affix-list" class="rex-affix-groups"></div>
+        </section>
+      </div>
+
+      <!-- 右侧粘性面板：已选条件 + 交易站正则预览 + 最爱预设 -->
+      <aside class="rex-col-side">
+        <section class="card">
+          <div class="card-head">
+            <h2 id="rex-result-heading">Selected conditions</h2>
+            <span class="badge-muted" id="rex-condition-count">0</span>
+          </div>
+
+          <div id="rex-summary"></div>
+
+          <div class="rex-regex-box">
+            <div class="rex-regex-head">
+              <span id="rex-regex-heading">Trade search box</span>
+              <span class="badge-muted" id="rex-regex-length">0 / 250</span>
+            </div>
+            <pre class="rex-regex-source empty" id="rex-regex-source"></pre>
+            <p class="rex-regex-msg" id="rex-regex-message" role="status" aria-live="polite"></p>
+          </div>
+
+          <div class="rex-actions">
+            <button type="button" class="btn btn-primary rex-btn-grow" id="rex-copy" disabled>Copy regex</button>
+            <button type="button" class="btn btn-ghost" id="rex-clear">Clear all</button>
+          </div>
+
+          <p class="hint-text" id="rex-status" role="status"></p>
+        </section>
+
+        <section class="card" aria-labelledby="rex-fav-heading">
+          <div class="card-head">
+            <h2 id="rex-fav-heading">Favorites</h2>
+            <span class="badge-muted" id="rex-fav-count">0</span>
+          </div>
+          <div class="rex-fav-row">
+            <input id="rex-fav-name" type="text" maxlength="24" placeholder="Name this preset" />
+            <button type="button" class="btn btn-sm btn-primary" id="rex-fav-save">Save</button>
+          </div>
+          <div class="rex-fav-list" id="rex-fav-list"></div>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+  <footer class="site-footer" id="sharedFooter" aria-label="Free Tool &amp; Anti-Resale Notice"></footer>
+
+  <script src="../../data/user/default_profile.js"></script>
+  <script src="../../data/poe2db/seasons_index.js"></script>
+  <script src="../../data/poe2db/current/atlas/atlas_mods.js"></script>
+  <script src="../../data/tool_data/tool1_regex/high_value_combos.js"></script>
+  <script src="../../src/shared/storage.js"></script>
+  <script src="../../src/shared/seasonManager.js"></script>
+  <script src="../../src/shared/i18n.js"></script>
+  <script src="../../src/shared/layout.js"></script>
+  <script src="../../src/tool1_regex/regexEngine.js"></script>
+  <script src="../../src/tool1_regex/regexUI.js"></script>
+</body>
+</html>

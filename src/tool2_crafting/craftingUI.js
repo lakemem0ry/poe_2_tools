@@ -1,5 +1,5 @@
 /**
- * 流放之路 2 做装模拟器 — 前端交互控制器
+ * 工具 2：流放之路 2 做装模拟器 — 前端交互控制器
  * 支持三语切换、工作台三栏模式、仿真通货仓库页、奥杜尔秘符、神庙通货、深渊渎灵与精华分类筛选
  */
 (function () {
@@ -11,8 +11,8 @@
   const TAG_I18N = window.POE2_TAG_I18N || { cn: window.POE2_TAG_NAMES || {}, tw: {}, us: {} };
 
   const state = {
-    lang: "us",
-    mode: "workbench",
+    lang: window.PoE2Layout ? window.PoE2Layout.getLanguage() : "us",
+    mode: (new URLSearchParams(window.location.search).get("mode") === "stash") ? "stash" : "workbench",
     slug: "Bows",
     catData: null,
     item: null,
@@ -37,24 +37,17 @@
     expandedFamilies: new Set(),
     revealState: null,
     cursorTool: null,
-    season10Enabled: (() => {
-      try {
-        const v = localStorage.getItem("poe2_season10_open");
-        return v === null ? true : v === "1";
-      } catch (_) {
-        return true;
-      }
-    })(),
+    season10Enabled: window.PoE2Storage ? window.PoE2Storage.getSeason10Open() : true,
     activeMarkId: null,
     costs: {},
     logs: []
   };
 
   const EL_IDS = [
-    "btnModeWorkbench", "btnModeStash", "btnModeRegex", "btnPoe2dbRef", "craftingTopActions",
+    "btnModeWorkbench", "btnModeStash", "btnPoe2dbRef", "craftingTopActions",
     "baseToolbar", "season10Box", "btnToggleSeason10", "s10ToggleLabel", "s10CollapsedHint",
     "s10Body", "s10DemoActions", "btnS10Demo64", "btnS10Demo84", "s10ForgeGrid", "s10BloodGrid", "s10ActionBar",
-    "workbenchView", "stashView", "regexView",
+    "workbenchView", "stashView",
     "categorySelect", "baseSelect", "ilvlInput", "qualityInput", "socketStatusBadge",
     "btnPunchSocket", "btnClearSockets", "aldurBar", "currencyGrid", "omenGrid",
     "desecrateOmenGrid", "keepOmensToggle", "essenceSearch", "essenceList", "desecrateBones",
@@ -100,27 +93,11 @@
   let feedbackTimer = null;
 
   function showFeedback(msg, type) {
-    if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = null; }
-    if (!msg) {
-      el.feedbackBanner.innerHTML = "";
-      el.feedbackBanner.classList.add("hidden");
-      return;
-    }
-    el.feedbackBanner.className = "status-feedback " + (type || "success");
-    el.feedbackBanner.innerHTML = `
-      <span class="feedback-text">${escapeHtml(msg)}</span>
-      <button type="button" class="feedback-close" id="btnDismissFeedback" aria-label="Close">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    `;
-    const dismissBtn = document.getElementById("btnDismissFeedback");
-    if (dismissBtn) dismissBtn.addEventListener("click", () => showFeedback("", ""));
-    feedbackTimer = setTimeout(() => showFeedback("", ""), 5500);
+    if (window.PoE2ShowFeedback) window.PoE2ShowFeedback(msg, type);
   }
-  window.PoE2ShowFeedback = showFeedback;
 
   function showRareUpgradePrompt(msg, modDef, poolName) {
-    if (feedbackTimer) { clearTimeout(feedbackTimer); feedbackTimer = null; }
+    if (window.PoE2ShowFeedback) window.PoE2ShowFeedback("", "");
     el.feedbackBanner.className = "status-feedback confirm";
     el.feedbackBanner.innerHTML = `
       <span>${escapeHtml(msg)}</span>
@@ -197,12 +174,8 @@
   }
 
   function applyStaticI18n() {
-    document.documentElement.lang = state.lang === "us" ? "en" : state.lang === "tw" ? "zh-TW" : "zh-CN";
-    document.title = tr("appTitle") + " — PoE2DB";
-    document.querySelectorAll("[data-i18n]").forEach((n) => { n.textContent = tr(n.getAttribute("data-i18n")); });
-    document.querySelectorAll("[data-i18n-ph]").forEach((n) => { n.setAttribute("placeholder", tr(n.getAttribute("data-i18n-ph"))); });
-    document.querySelectorAll("[data-lang]").forEach((b) => { b.classList.toggle("active", b.getAttribute("data-lang") === state.lang); });
-    el.btnPoe2dbRef.href = `https://poe2db.tw/${state.lang}/${state.slug}#ModifiersCalc`;
+    if (window.PoE2Layout) window.PoE2Layout.applyI18n(state.lang);
+    if (el.btnPoe2dbRef) el.btnPoe2dbRef.href = `https://poe2db.tw/${state.lang}/${state.slug}#ModifiersCalc`;
   }
 
   function initCategorySelect() {
@@ -360,7 +333,7 @@
     const { normalMax } = E.getSocketLimits(cat);
 
     el.currencyGrid.innerHTML = E.CURRENCIES.map((cur) => {
-      let disabled = item.corrupted;
+      let disabled = item.corrupted || (cur.minModLvl > 1 && item.ilvl < cur.minModLvl);
       if (cur.id === "artificer") {
         disabled = item.corrupted || normalMax === 0 || (item.sockets || 0) >= normalMax;
       } else if (!disabled) {
@@ -455,14 +428,17 @@
 
     const counts = E.countAffixes(item);
     const maxSlots = E.getMaxSlots(cat, item);
-    const disabled = item.corrupted || item.rarity !== "rare" || counts.total >= (maxSlots.maxP + maxSlots.maxS);
-    el.desecrateBones.innerHTML = E.ABYSS_BONES.map((b) => `
-      <button type="button" class="orb-btn" data-bone="${b.id}" ${disabled ? "disabled" : ""}>
+    const baseDisabled = item.corrupted || item.rarity !== "rare" || counts.total >= (maxSlots.maxP + maxSlots.maxS);
+    el.desecrateBones.innerHTML = E.ABYSS_BONES.map((b) => {
+      const bDisabled = baseDisabled || ((b.minModLvl || 1) > 1 && item.ilvl < b.minModLvl);
+      return `
+      <button type="button" class="orb-btn" data-bone="${b.id}" ${bDisabled ? "disabled" : ""}>
         <img src="${b.icon}" alt="" loading="lazy" />
         <span class="orb-name">${escapeHtml(loc(b, "name"))}</span>
         <span class="orb-sub">${escapeHtml(loc(b, "sub"))}</span>
       </button>
-    `).join("");
+    `;
+    }).join("");
 
     const hasReveal = !!(state.revealState && state.revealState.choices.length > 0);
     el.revealBox.classList.toggle("hidden", !hasReveal);
@@ -1080,33 +1056,24 @@
 
   // ========= 事件绑定 =========
   function switchMode(mode) {
-    state.mode = mode;
-    el.btnModeWorkbench.classList.toggle("active", mode === "workbench");
-    el.btnModeStash.classList.toggle("active", mode === "stash");
-    if (el.btnModeRegex) el.btnModeRegex.classList.toggle("active", mode === "regex");
-    el.workbenchView.classList.toggle("hidden", mode !== "workbench");
-    el.stashView.classList.toggle("hidden", mode !== "stash");
-    if (el.regexView) el.regexView.classList.toggle("hidden", mode !== "regex");
-    if (el.baseToolbar) el.baseToolbar.classList.toggle("hidden", mode === "regex");
-    if (el.season10Box) el.season10Box.classList.toggle("hidden", mode === "regex");
-    if (el.craftingTopActions) el.craftingTopActions.classList.toggle("hidden", mode === "regex");
-    if (mode === "stash") renderStashSimulation();
-    if (mode === "regex" && window.PoE2RegexTool) window.PoE2RegexTool.renderAll();
+    state.mode = mode === "stash" ? "stash" : "workbench";
+    if (el.btnModeWorkbench) el.btnModeWorkbench.classList.toggle("active", state.mode === "workbench");
+    if (el.btnModeStash) el.btnModeStash.classList.toggle("active", state.mode === "stash");
+    el.workbenchView.classList.toggle("hidden", state.mode !== "workbench");
+    el.stashView.classList.toggle("hidden", state.mode !== "stash");
+    if (state.mode === "stash") renderStashSimulation();
   }
   el.btnModeWorkbench.addEventListener("click", () => switchMode("workbench"));
   el.btnModeStash.addEventListener("click", () => switchMode("stash"));
-  if (el.btnModeRegex) el.btnModeRegex.addEventListener("click", () => switchMode("regex"));
-
-  document.querySelectorAll("[data-lang]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.lang = btn.getAttribute("data-lang");
+  if (window.PoE2Layout) {
+    window.PoE2Layout.onLanguageChange((nextLang) => {
+      state.lang = nextLang;
       initCategorySelect();
       renderBaseSelectOptions();
       renderPoolTabs();
       renderAll();
-      if (window.PoE2RegexTool) window.PoE2RegexTool.setLanguage(state.lang);
     });
-  });
+  }
 
   el.categorySelect.addEventListener("change", () => selectCategory(el.categorySelect.value));
   el.baseSelect.addEventListener("change", () => { resetItemToBase(); renderAll(); });
@@ -1352,7 +1319,7 @@
     el.btnToggleSeason10.addEventListener("click", () => {
       state.season10Enabled = !state.season10Enabled;
       if (!state.season10Enabled) state.activeMarkId = null;
-      try { localStorage.setItem("poe2_season10_open", state.season10Enabled ? "1" : "0"); } catch (_) {}
+      if (window.PoE2Storage) window.PoE2Storage.setSeason10Open(state.season10Enabled);
       renderSeason10Box();
     });
   }
@@ -1475,7 +1442,6 @@
   // 初始化
   applyStaticI18n();
   initCategorySelect();
+  switchMode(state.mode);
   selectCategory(state.slug);
-  if (window.PoE2RegexTool) window.PoE2RegexTool.setLanguage(state.lang);
-  if (window.location.hash === "#regex") switchMode("regex");
 })();

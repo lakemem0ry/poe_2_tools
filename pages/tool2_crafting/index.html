@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoE 2 Crafting Simulator — PoE2DB</title>
+  <script>
+    window.POE2_BASE_PATH = "../../";
+    window.POE2_PAGE = "tool2_crafting";
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../styles/base.css" />
+  <link rel="stylesheet" href="../../styles/tool2_crafting.css" />
+</head>
+<body>
+  <header class="topbar" id="sharedTopbar"></header>
+  <div class="status-feedback hidden" id="feedbackBanner" role="status" aria-live="polite"></div>
+
+  <!-- 共享底材配置栏（仿真模式与工作台共享） -->
+  <section class="base-toolbar" id="baseToolbar" aria-label="底材选择栏">
+    <div class="base-toolbar-grid">
+      <div class="field">
+        <label for="categorySelect" data-i18n="catLabel">装备分类（81 类全收录）</label>
+        <select id="categorySelect"></select>
+      </div>
+      <div class="field">
+        <label for="baseSelect" data-i18n="baseLabel">底材类型</label>
+        <select id="baseSelect"></select>
+      </div>
+      <div class="field">
+        <label for="ilvlInput" data-i18n="ilvlLabel">物品等级 (iLvl)</label>
+        <div class="inline-stepper">
+          <input type="number" id="ilvlInput" min="1" max="100" value="84" />
+          <button type="button" class="mini-chip" data-ilvl="65">65</button>
+          <button type="button" class="mini-chip" data-ilvl="78">78</button>
+          <button type="button" class="mini-chip" data-ilvl="82">82</button>
+          <button type="button" class="mini-chip" data-ilvl="84">84</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="qualityInput" data-i18n="qualLabel">品质 (%)</label>
+        <div class="inline-stepper">
+          <input type="number" id="qualityInput" min="0" max="30" value="20" />
+          <button type="button" class="mini-chip" data-qual="0">0%</button>
+          <button type="button" class="mini-chip" data-qual="20">20%</button>
+          <button type="button" class="mini-chip" data-qual="30">30%</button>
+        </div>
+      </div>
+      <div class="field">
+        <label data-i18n="socketsLabel">插槽与奥杜尔秘符</label>
+        <div class="inline-stepper">
+          <span class="badge-muted" id="socketStatusBadge">0 / 2 孔</span>
+          <button type="button" class="mini-chip" id="btnPunchSocket" data-i18n="punchSocket">巧匠石打孔 (+1)</button>
+          <button type="button" class="mini-chip" id="btnClearSockets" data-i18n="clearSockets">清空插槽</button>
+        </div>
+      </div>
+    </div>
+    <!-- 奥杜尔秘符镶嵌开关条 -->
+    <div class="aldur-bar" id="aldurBar"></div>
+  </section>
+
+  <!-- 1.0 赛季通货预测独立可开关方框（体验尝鲜 · 工作台与仿真模式共享） -->
+  <section class="s10-box" id="season10Box" aria-label="1.0 赛季通货预测（体验尝鲜）">
+    <div class="s10-header">
+      <div class="s10-title-group">
+        <span class="s10-crest" aria-hidden="true">1.0</span>
+        <h2 class="s10-title" data-i18n="s10Title">1.0 赛季通货预测（体验尝鲜）</h2>
+        <span class="s10-badge" data-i18n="s10Badge">瓦尔克拉斯征服者 · 预计 2026-12-12 上线</span>
+        <span class="s10-badge" data-i18n="s10RefBadge">仅供参考</span>
+      </div>
+      <div class="s10-header-actions">
+        <div class="s10-demo-actions" id="s10DemoActions">
+          <button type="button" class="mini-chip" id="btnS10Demo64" data-i18n="s10DemoRare64">生成 Lv64 测试黄装</button>
+          <button type="button" class="mini-chip" id="btnS10Demo84" data-i18n="s10DemoRare84">生成 Lv84 测试黄装</button>
+        </div>
+        <button type="button" class="s10-switch-btn active" id="btnToggleSeason10" aria-expanded="true">
+          <span class="s10-switch-dot" aria-hidden="true"></span>
+          <span id="s10ToggleLabel" data-i18n="s10ToggleOn">已开启 · 点击收起</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="s10-collapsed-hint hidden" id="s10CollapsedHint" data-i18n="s10SwitchDesc">
+      基于 PoE2DB 1.0 解包词条与官方「Conquerors of Wraeclast」专题：攻城宝库产出 6 种新通货（≤Lv64 熔炉标记 / ≥Lv65 鲜血血瓶）
+    </p>
+
+    <div class="s10-body" id="s10Body">
+      <div class="s10-notice" data-i18n="s10Notice">
+        【体验尝鲜 · 以 1.0 正式上线补丁为准】机制流程：先选中稀有装备上的任意未锁定词缀打上 [Forgemark] / [Bloodmark] 标记，再点击「重铸标记词缀」一次性替换为永久锁定的「破裂词缀」（此后混沌石/剥离石/神圣石均不会改变该破裂词缀）。注：三种血瓶的血脉专属高阶词缀池待 12 月补丁正式确认，当前暂以 Lv65+ 词缀池模拟。
+      </div>
+
+      <div class="s10-wings">
+        <div class="s10-wing s10-wing-forge">
+          <div class="s10-wing-head">
+            <span data-i18n="s10ForgeGroupTitle">前期熔炉标记 [Forgemark]（最高物等 64 · 任选前后缀）</span>
+            <span class="s10-wing-tag" data-i18n="s10MaxLvTag">≤iLvl 64 · 任意词缀</span>
+          </div>
+          <div class="s10-grid" id="s10ForgeGrid"></div>
+        </div>
+
+        <div class="s10-wing s10-wing-blood">
+          <div class="s10-wing-head">
+            <span data-i18n="s10BloodGroupTitle">终局鲜血血瓶 [Bloodmark]（最低词缀等级 65 · 任选前后缀）</span>
+            <span class="s10-wing-tag" data-i18n="s10MinLvTag">Lv65+ · 任意词缀</span>
+          </div>
+          <div class="s10-grid" id="s10BloodGrid"></div>
+        </div>
+      </div>
+
+      <div class="s10-action-bar hidden" id="s10ActionBar"></div>
+    </div>
+  </section>
+
+  <!-- 模式 A：工作台对称三栏模式 -->
+  <main class="workspace" id="workbenchView">
+    <aside class="panel panel-left" aria-label="做装工作台">
+      <section class="card card-full">
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab active" role="tab" aria-selected="true" data-craft-tab="currency" data-i18n="tabCurrency">通货与预兆</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-craft-tab="essence" data-i18n="tabEssence">精华</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-craft-tab="desecrate" data-i18n="tabDesecrate">渎灵 (深渊)</button>
+          <button type="button" class="tab" role="tab" aria-selected="false" data-craft-tab="temple" data-i18n="tabTemple">神庙通货</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-currency">
+          <div class="section-label">
+            <span data-i18n="basicOrbs">基础与阶梯通货</span>
+            <span class="hint-text" data-i18n="clickOrbHint">点击通货对当前装备使用</span>
+          </div>
+          <div class="currency-grid" id="currencyGrid"></div>
+
+          <div class="section-label">
+            <span data-i18n="omensTitle">预兆 (Omens)</span>
+            <label class="toggle-inline">
+              <input type="checkbox" id="keepOmensToggle" />
+              <span data-i18n="keepOmens">锁定预兆（不消耗）</span>
+            </label>
+          </div>
+          <div class="omen-grid" id="omenGrid"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-essence">
+          <div class="info-banner" data-i18n="essenceNotice"></div>
+          <div class="essence-filter-row">
+            <input type="search" id="essenceSearch" data-i18n-ph="essenceSearchPh" placeholder="搜索精华或合金词缀..." />
+            <div class="pill-group">
+              <button type="button" class="pill active" data-ess-filter="all" data-i18n="filterAll">全部</button>
+              <button type="button" class="pill" data-ess-filter="lesser" data-i18n="filterEssLesser">次级</button>
+              <button type="button" class="pill" data-ess-filter="normal" data-i18n="filterEssNormal">普通</button>
+              <button type="button" class="pill" data-ess-filter="greater" data-i18n="filterEssGreater">强效</button>
+              <button type="button" class="pill" data-ess-filter="perfect" data-i18n="filterEssPerfect">完美</button>
+              <button type="button" class="pill" data-ess-filter="special" data-i18n="filterEssSpecial">特殊</button>
+              <button type="button" class="pill" data-ess-filter="alloy" data-i18n="filterEssAlloy">合金</button>
+            </div>
+          </div>
+          <div class="essence-list" id="essenceList"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-desecrate">
+          <div class="info-banner" data-i18n="desecrateNotice"></div>
+          <div class="desecrate-bones" id="desecrateBones"></div>
+          <div class="reveal-box hidden" id="revealBox">
+            <div class="reveal-head">
+              <h3 data-i18n="revealTitle">灵魂深井揭示（请选择 1 条词缀）</h3>
+              <button type="button" class="btn btn-sm btn-accent hidden" id="btnRerollReveal" data-i18n="rerollReveal">深渊回响重骰</button>
+            </div>
+            <div class="reveal-choices" id="revealChoices"></div>
+          </div>
+          <div class="desecrate-omens">
+            <div class="section-label"><span data-i18n="desecrateOmensTitle">深渊专用预兆</span></div>
+            <div class="omen-grid" id="desecrateOmenGrid"></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-temple">
+          <div class="info-banner" data-i18n="templeNotice"></div>
+          <div class="temple-list" id="templeList"></div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="panel panel-center" aria-label="装备预览与词缀结构">
+      <div class="item-stage">
+        <div class="view-mode-bar">
+          <div class="pill-group" role="group">
+            <button type="button" class="pill active" id="btnViewMerged" data-i18n="viewMerged">合并展示（游戏内最终属性）</button>
+            <button type="button" class="pill" id="btnViewSplit" data-i18n="viewSplit">词缀逐条拆解（Alt 视图）</button>
+          </div>
+          <div class="alt-badge" id="altHintPill">
+            <kbd>Alt</kbd> <span data-i18n="altHint">按住查看词缀拆解</span>
+          </div>
+          <span class="affix-counter" id="affixCounter">0/3 · 0/3</span>
+        </div>
+
+        <div id="itemCardMount"></div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2 data-i18n="slotTitle">词缀槽位结构（沙盒精细调整）</h2>
+          <span class="hint-text" data-i18n="slotHint"></span>
+        </div>
+        <div class="slots-columns">
+          <div class="slot-group">
+            <div class="slot-group-title prefix-color">
+              <span data-i18n="prefixes">前缀 (Prefixes)</span>
+              <span id="prefixCountBadge">0 / 3</span>
+            </div>
+            <div class="slot-list" id="prefixSlots"></div>
+          </div>
+          <div class="slot-group">
+            <div class="slot-group-title suffix-color">
+              <span data-i18n="suffixes">后缀 (Suffixes)</span>
+              <span id="suffixCountBadge">0 / 3</span>
+            </div>
+            <div class="slot-list" id="suffixSlots"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="bottom-split">
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="mergeTitle">复合与同类相加明细</h2>
+            <span class="badge-muted" id="mergeCountBadge">0</span>
+          </div>
+          <div class="merge-breakdown" id="mergeBreakdown"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="costTitle">通货消耗与操作记录</h2>
+            <button type="button" class="mini-chip" id="btnClearLog" data-i18n="clearLog">清空统计</button>
+          </div>
+          <div class="cost-pills" id="costPills"></div>
+          <ul class="craft-log" id="craftLog"></ul>
+        </section>
+      </div>
+    </section>
+
+    <aside class="panel panel-right" aria-label="PoE2DB 词缀池">
+      <section class="card card-full">
+        <div class="card-head">
+          <h2 data-i18n="poolTitle">编年史词缀池与概率</h2>
+          <span class="badge-muted" id="poolStatsBadge">--</span>
+        </div>
+
+        <div class="pool-tabs" id="poolTabs">
+          <button type="button" class="pill active" data-pool="normal" data-i18n="poolNormal">基础池</button>
+          <button type="button" class="pill" data-pool="desecrated" data-i18n="poolDesecrated">渎灵</button>
+          <button type="button" class="pill" data-pool="essence" data-i18n="poolEssence">精华</button>
+          <button type="button" class="pill" data-pool="perfect_essence" data-i18n="poolPerfectEssence">完美/合金</button>
+          <button type="button" class="pill" data-pool="corrupted" data-i18n="poolCorrupted">腐化附魔</button>
+          <button type="button" class="pill hidden" data-pool="extra" id="btnExtraPool"></button>
+          <button type="button" class="pill hidden" data-pool="extra2" id="btnExtraPool2"></button>
+        </div>
+
+        <div class="pool-controls">
+          <input type="search" id="modSearchInput" data-i18n-ph="poolSearchPh" placeholder="搜索词缀效果、名称或英文族..." />
+          <div class="pool-filter-row">
+            <div class="pill-group">
+              <button type="button" class="pill active" data-gen-filter="all" data-i18n="filterAll">全部</button>
+              <button type="button" class="pill" data-gen-filter="1" data-i18n="prefixShort">前缀</button>
+              <button type="button" class="pill" data-gen-filter="2" data-i18n="suffixShort">后缀</button>
+            </div>
+            <label class="toggle-inline">
+              <input type="checkbox" id="filterIlvlToggle" checked />
+              <span data-i18n="onlyIlvl">仅看当前 iLvl</span>
+            </label>
+          </div>
+          <div class="tag-filter-bar" id="tagFilterBar"></div>
+        </div>
+
+        <div class="mod-pool-list" id="modPoolList"></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- 模式 B：仿真做装 -->
+  <section class="stash-workspace hidden" id="stashView" aria-label="仿真做装通货仓库页">
+    <div class="stash-layout">
+      <div class="stash-board-wrap">
+        <div class="stash-cursor-bar">
+          <div class="cursor-status">
+            <span data-i18n="stashActiveOrb">当前手持通货：</span>
+            <span id="stashActiveToolLabel" class="cursor-active-name" data-i18n="stashNone">未选中</span>
+          </div>
+          <div class="stash-cursor-actions">
+            <label class="toggle-inline stash-toggle">
+              <input type="checkbox" id="stashKeepOmensToggle" />
+              <span data-i18n="keepOmens">锁定预兆（不消耗）</span>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnDropCursorTool" data-i18n="stashClearTool">放下手持通货</button>
+          </div>
+        </div>
+
+        <div class="poe-stash-board">
+          <div class="stash-top-grid">
+            <div class="stash-col-left" id="stashLeftOrbs"></div>
+
+            <div class="stash-col-center">
+              <div class="stash-top-orbs" id="stashTopOrbs"></div>
+
+              <div class="stash-pedestal-row">
+                <button type="button" class="stash-item-pedestal" id="stashItemPedestal" title="点击应用当前手持通货">
+                  <div class="pedestal-rarity-glow" id="pedestalGlow"></div>
+                  <img id="pedestalIcon" src="https://cdn.poe2db.tw/image/Art/2DItems/Weapons/TwoHandWeapons/Bows/Bows5.webp" alt="Equipped Base Item" />
+                  <div class="pedestal-sockets" id="pedestalSockets"></div>
+                  <div class="pedestal-hint" data-i18n="stashClickItemHint">点击中央装备槽即可应用当前手持通货</div>
+                </button>
+              </div>
+            </div>
+
+            <div class="stash-col-right">
+              <div class="stash-right-tools" id="stashRightTools"></div>
+            </div>
+          </div>
+
+          <div class="reveal-box stash-reveal-immediate hidden" id="stashRevealBox">
+            <div class="reveal-head">
+              <h3 data-i18n="revealTitle">灵魂深井揭示（请选择 1 条词缀）</h3>
+              <button type="button" class="btn btn-sm btn-accent hidden" id="btnStashRerollReveal" data-i18n="rerollReveal">深渊回响重骰</button>
+            </div>
+            <div class="reveal-choices stash-reveal-choices-grid" id="stashRevealChoices"></div>
+          </div>
+
+          <div class="stash-drawer-bar" role="tablist">
+            <button type="button" class="stash-tab active" data-stash-tab="abyss" data-i18n="stashTabAbyss">深渊与渎灵</button>
+            <button type="button" class="stash-tab" data-stash-tab="omens" data-i18n="stashTabOmens">常规预兆</button>
+            <button type="button" class="stash-tab" data-stash-tab="essence" data-i18n="stashTabEssence">精华</button>
+            <button type="button" class="stash-tab" data-stash-tab="temple" data-i18n="stashTabTemple">神庙通货</button>
+            <button type="button" class="stash-tab" data-stash-tab="aldur" data-i18n="stashTabAldur">奥杜尔秘符</button>
+            <button type="button" class="stash-tab" data-stash-tab="all" data-i18n="stashTabAll">全部展开</button>
+          </div>
+
+          <div class="stash-drawer-section" data-stash-section="abyss">
+            <div class="stash-sub-header" data-i18n="stashAbyssTitle">深渊渎灵通货与深渊预兆</div>
+            <div class="stash-grid-cards" id="stashAbyssGrid"></div>
+          </div>
+
+          <div class="stash-drawer-section hidden" data-stash-section="omens">
+            <div class="stash-sub-header stash-sub-header-row">
+              <span data-i18n="stashOmensTitle">预兆 (Omens)</span>
+            </div>
+            <div class="stash-grid-cards" id="stashOmenGrid"></div>
+          </div>
+
+          <div class="stash-drawer-section hidden" data-stash-section="essence">
+            <div class="stash-sub-header stash-sub-header-row">
+              <span data-i18n="stashEssenceTitle">精华 (Essences)</span>
+              <div class="stash-ess-controls">
+                <input type="search" id="stashEssenceSearch" class="stash-search-input" data-i18n-ph="stashEssSearchPh" placeholder="搜索精华..." />
+                <div class="pill-group stash-pill-group">
+                  <button type="button" class="pill active" data-stash-ess-filter="all" data-i18n="filterAll">全部</button>
+                  <button type="button" class="pill" data-stash-ess-filter="lesser" data-i18n="filterEssLesser">次级</button>
+                  <button type="button" class="pill" data-stash-ess-filter="normal" data-i18n="filterEssNormal">普通</button>
+                  <button type="button" class="pill" data-stash-ess-filter="greater" data-i18n="filterEssGreater">强效</button>
+                  <button type="button" class="pill" data-stash-ess-filter="perfect" data-i18n="filterEssPerfect">完美</button>
+                  <button type="button" class="pill" data-stash-ess-filter="special" data-i18n="filterEssSpecial">特殊</button>
+                  <button type="button" class="pill" data-stash-ess-filter="alloy" data-i18n="filterEssAlloy">合金</button>
+                </div>
+              </div>
+            </div>
+            <div class="stash-grid-cards stash-essence-grid" id="stashEssenceGrid"></div>
+          </div>
+
+          <div class="stash-drawer-section hidden" data-stash-section="temple">
+            <div class="stash-sub-header" data-i18n="stashTempleTitle">神庙通货</div>
+            <div class="stash-grid-cards" id="stashTempleGrid"></div>
+          </div>
+
+          <div class="stash-drawer-section hidden" data-stash-section="aldur">
+            <div class="stash-sub-header" data-i18n="stashAldurTitle">奥杜尔秘符</div>
+            <div class="stash-grid-cards" id="stashAldurGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stash-inspector">
+        <div id="stashItemCardMount"></div>
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="mergeTitle">复合与同类相加明细</h2>
+            <span class="badge-muted" id="stashMergeBadge">0</span>
+          </div>
+          <div class="merge-breakdown" id="stashMergeBreakdown"></div>
+        </section>
+        <section class="card">
+          <div class="card-head">
+            <h2 data-i18n="costTitle">通货消耗与操作记录</h2>
+            <button type="button" class="mini-chip" id="btnStashClearLog" data-i18n="clearLog">重置统计</button>
+          </div>
+          <div class="cost-pills" id="stashCostPills"></div>
+          <ul class="craft-log" id="stashCraftLog"></ul>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer" id="sharedFooter" aria-label="Free Tool &amp; Anti-Resale Notice"></footer>
+
+  <script src="../../data/user/default_profile.js"></script>
+  <script src="../../data/poe2db/seasons_index.js"></script>
+  <script src="../../data/poe2db/current/equipment/catalog.js"></script>
+  <script src="../../data/tool_data/tool2_crafting/season10_forecast.js"></script>
+  <script src="../../src/shared/storage.js"></script>
+  <script src="../../src/shared/seasonManager.js"></script>
+  <script src="../../src/shared/i18n.js"></script>
+  <script src="../../src/shared/layout.js"></script>
+  <script src="../../src/tool2_crafting/craftingEngine.js"></script>
+  <script src="../../src/tool2_crafting/craftingUI.js"></script>
+</body>
+</html>

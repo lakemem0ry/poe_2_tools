@@ -1,206 +1,7 @@
 /**
- * 流放之路 2 (PoE2) 词缀正则生成器引擎与视图控制器
- * 支持引路石 (Waystones) 与石板/碑牌 (Tablets) 交易站搜索正则构建、250 字符安全降级、高价值碑牌筛选与最爱预设
+ * 工具 1：PoE2 市集与仓库词缀正则生成器界面控制器
+ * 基于 PoE2DB (https://poe2db.tw/) 官方三语词缀库与无碰撞短片段算法构建
  */
-(function (root, factory) {
-  var api = factory();
-  if (typeof module !== "undefined" && module.exports) module.exports = api;
-  root.POE2_REGEX = api;
-})(typeof window !== "undefined" ? window : globalThis, function () {
-  "use strict";
-  var VERSION = "1.3.0";
-  var BUDGET = 250;
-  var BUDGET_SAFE = 248;
-  function clamp(n) { return Math.max(0, Math.min(999, trunc(Number(n) || 0))); }
-  function trunc(n) { return n < 0 ? Math.ceil(n) : Math.floor(n); }
-  var META = /[.*+?^${}()|[\]\\]/g;
-  function esc(text) { return String(text == null ? "" : text).replace(META, "\\$&"); }
-
-  var FIELD_SEP = "\\s*[:：]\\s*\\+?";
-  var LOOSE_SEP = "\\s*[:：]?\\s*\\+?";
-  function rangeSameWidth(loStr, hiStr) {
-    var w = loStr.length;
-    if (loStr === strRepeat("0", w) && hiStr === strRepeat("9", w)) return strRepeat("[0-9]", w);
-    if (w === 1) return loStr === hiStr ? loStr : "[" + loStr + "-" + hiStr + "]";
-    var a = loStr.charAt(0), b = hiStr.charAt(0);
-    if (loStr.slice(1) === strRepeat("0", w - 1) && hiStr.slice(1) === strRepeat("9", w - 1)) {
-      return (a === b ? a : "[" + a + "-" + b + "]") + strRepeat("[0-9]", w - 1);
-    }
-    if (a === b) return a + rangeSameWidth(loStr.slice(1), hiStr.slice(1));
-    var parts = [];
-    parts.push(a + rangeSameWidth(loStr.slice(1), strRepeat("9", w - 1)));
-    if (+b > +a + 1) parts.push(charClass(+a + 1, +b - 1) + strRepeat("[0-9]", w - 1));
-    parts.push(b + rangeSameWidth(strRepeat("0", w - 1), hiStr.slice(1)));
-    return parts.length === 1 ? parts[0] : "(" + parts.join("|") + ")";
-  }
-  function charClass(lo, hi) { return lo === hi ? String(lo) : "[" + lo + "-" + hi + "]"; }
-  function strRepeat(s, n) { var o = ""; for (var i = 0; i < n; i++) o += s; return o; }
-  function numberInRange(min, max) {
-    min = clamp(min); max = clamp(max);
-    if (min > max) return null;
-    if (min === max) return String(min);
-    var parts = [], minW = String(min).length, maxW = String(max).length;
-    for (var w = minW; w <= maxW; w++) {
-      var lo = w === minW ? min : Math.pow(10, w - 1);
-      var hi = w === maxW ? max : Math.pow(10, w) - 1;
-      parts.push(rangeSameWidth(String(lo), String(hi)));
-    }
-    return parts.length === 1 ? parts[0] : "(" + parts.join("|") + ")";
-  }
-  var PH = /\(\s*([+\-]?\d{1,3})\s*[—–-]\s*([+\-]?\d{1,3})\s*\)%?|(?:[#X~])\s*%?/g;
-  function isSpaceChar(code) { return code === 32 || code === 9 || code === 10 || code === 13 || code === 12 || code === 11 || code === 160 || code === 0x3000; }
-  function litEscape(s, spaceToken) {
-    s = String(s); var out = []; var buf = "";
-    for (var i = 0; i < s.length; i++) {
-      var ch = s.charAt(i);
-      if (isSpaceChar(s.charCodeAt(i))) {
-        if (buf) { out.push(esc(buf)); buf = ""; }
-        if (out.length === 0 || out[out.length - 1] !== spaceToken) out.push(spaceToken);
-      } else buf += ch;
-    }
-    if (buf) out.push(esc(buf));
-    return out.join("");
-  }
-  var SP = ".*";
-  function stripNumbers(text) {
-    var s = String(text == null ? "" : text); var out = []; var last = 0, m;
-    PH.lastIndex = 0;
-    while ((m = PH.exec(s)) !== null) {
-      out.push(litEscape(s.slice(last, m.index), SP)); out.push(null);
-      last = m.index + m[0].length;
-    }
-    out.push(litEscape(s.slice(last), SP));
-    return out;
-  }
-  function presence(text, minLen) {
-    if (!text) return null;
-    var limit = (typeof minLen === "number" && minLen > 0) ? minLen : 4;
-    var chunks = stripNumbers(text); var pieces = [];
-    for (var i = 0; i < chunks.length; i++) {
-      var c = chunks[i];
-      if (c === null) { if (pieces.length && pieces[pieces.length - 1] !== ".*") pieces.push(".*"); }
-      else { var lit = c.split(" ").join(SP); if (lit) pieces.push(lit); }
-    }
-    while (pieces.length && pieces[0] === ".*") pieces.shift();
-    while (pieces.length && pieces[pieces.length - 1] === ".*") pieces.pop();
-    var p = normalizeDots(pieces.join(""));
-    if (!p || p.length < limit) return null;
-    return p;
-  }
-  var ESC_DOT = "\u0001ESCDOT\u0001";
-  var WILD = "\u0002";
-  function normalizeDots(p) {
-    if (!p) return p;
-    var out = p.replace(/\\\./g, ESC_DOT);
-    out = out.replace(/\.\*/g, WILD);
-    out = out.replace(/\./g, WILD);
-    out = out.replace(/\u0002+/g, WILD);
-    out = out.split(WILD).join(".*");
-    out = out.replace(/^(?:\.\*)+/, "");
-    out = out.replace(/(?:\.\*)+$/, "");
-    return out.split(ESC_DOT).join("\\.");
-  }
-  function threshold(text, opts) {
-    if (!text) return null;
-    opts = opts || {};
-    var s = String(text); var parts = []; var last = 0, m;
-    PH.lastIndex = 0; var hit = false; var slot = 0;
-    var tightAny = (opts.atLeast !== undefined && opts.atLeast !== null && opts.atLeast !== "") ||
-                   (opts.atMost !== undefined && opts.atMost !== null && opts.atMost !== "");
-    while ((m = PH.exec(s)) !== null) {
-      hit = true;
-      parts.push(litEscape(s.slice(last, m.index), SP));
-      var lo = 0, hi = 999;
-      if (m[1] !== undefined) { lo = +m[1]; hi = +m[2]; }
-      var primary = (slot === 0);
-      if (primary) {
-        if (opts.atLeast !== undefined && opts.atLeast !== null && opts.atLeast !== "") lo = Math.max(lo, clamp(opts.atLeast));
-        if (opts.atMost !== undefined && opts.atMost !== null && opts.atMost !== "") hi = Math.min(hi, clamp(opts.atMost));
-        if (lo > hi) return null;
-      }
-      var tight = primary && tightAny;
-      parts.push(tight ? (numberInRange(lo, hi) || "[0-9]+") : "[0-9]+");
-      parts.push("(?:" + SP + "\\([0-9]+[-–—][0-9]+\\))?");
-      last = m.index + m[0].length; slot++;
-    }
-    if (!hit) return null;
-    parts.push(litEscape(s.slice(last), SP));
-    return normalizeDots(parts.join("")) || null;
-  }
-  function build(opts) {
-    opts = opts || {};
-    var includes = dedupe(compact(opts.includes || []));
-    var excludes = dedupe(compact(opts.excludes || []));
-    var always = dedupe(compact(opts.always || []));
-    var match = opts.match === "any" ? "any" : "all";
-    var allBlocks = always.concat(includes, excludes);
-    if (!allBlocks.length) return { ok: false, reason: "no-conditions", source: "", blocks: [], length: 0 };
-    for (var i = 0; i < allBlocks.length; i++) {
-      if (!isSafe(allBlocks[i])) return { ok: false, reason: "invalid-fragment", source: "", blocks: [], length: 0, detail: allBlocks[i] };
-    }
-    var blocks = always.slice();
-    if (includes.length) {
-      if (match === "all") { for (var j = 0; j < includes.length; j++) blocks.push(includes[j]); }
-      else blocks.push(includes.join("|"));
-    }
-    if (excludes.length) blocks.push("!" + excludes.join("|"));
-    var source = quoteAll(blocks);
-    return { ok: true, reason: "ok", source: source, blocks: blocks, length: source.length };
-  }
-  function quoteAll(blocks) {
-    var out = [];
-    for (var i = 0; i < blocks.length; i++) out.push('"' + blocks[i] + '"');
-    return out.join(" ");
-  }
-  function isSafe(p) { return typeof p === "string" && p.length > 0 && p.indexOf('"') === -1 && p.indexOf("\n") === -1 && p.indexOf("\r") === -1; }
-  function compact(list) { var out = []; for (var i = 0; i < list.length; i++) { if (list[i]) out.push(list[i]); } return out; }
-  function dedupe(list) {
-    var seen = {}, out = [];
-    for (var i = 0; i < list.length; i++) { if (seen[list[i]]) continue; seen[list[i]] = 1; out.push(list[i]); }
-    return out;
-  }
-  function fit(levels, budget) {
-    budget = budget || BUDGET;
-    var chosen = null;
-    for (var i = 0; i < levels.length; i++) {
-      var r = build(levels[i]);
-      if (r.ok && r.length <= budget) { chosen = { level: i, source: r.source, length: r.length, blocks: r.blocks }; break; }
-    }
-    if (!chosen) {
-      var best = null;
-      for (var k = 0; k < levels.length; k++) {
-        var rr = build(levels[k]);
-        if (rr.ok && (!best || rr.length < best.length)) best = { level: k, source: rr.source, length: rr.length, blocks: rr.blocks };
-      }
-      if (best) { best.over = true; return best; }
-      return { level: -1, source: "", length: 0, blocks: [], empty: true };
-    }
-    chosen.over = false;
-    return chosen;
-  }
-  function selfTest() {
-    var fails = [];
-    var probes = [[0, 9], [0, 10], [5, 5], [1, 999], [15, 19], [30, 40], [70, 100], [100, 119], [200, 240], [25, 35], [0, 0], [99, 101], [150, 150], [12, 18], [5, 20], [8, 12], [3, 6], [10, 25], [50, 239], [7, 700]];
-    for (var i = 0; i < probes.length; i++) {
-      var lo = probes[i][0], hi = probes[i][1];
-      var frag = numberInRange(lo, hi);
-      if (!frag) { fails.push(lo + "-" + hi + ": null"); continue; }
-      var re;
-      try { re = new RegExp("^(?:" + frag + ")$"); } catch (e) { fails.push(lo + "-" + hi + ": bad"); continue; }
-      for (var v = 0; v <= 999; v++) {
-        if (re.test(String(v)) !== (v >= lo && v <= hi)) { fails.push(lo + "-" + hi + " v=" + v); break; }
-      }
-    }
-    if (esc("a.b") !== "a\\.b") fails.push("escape");
-    var b = build({ includes: ["abc", "def"], excludes: ["xyz"], always: ["aaa"], match: "all" });
-    if (!b.ok || b.source !== '"aaa" "abc" "def" "!xyz"') fails.push("build-all");
-    var b2 = build({ includes: ["abc", "def"], match: "any" });
-    if (!b2.ok || b2.source !== '"abc|def"') fails.push("build-any");
-    return { ok: fails.length === 0, fails: fails };
-  }
-  return { VERSION: VERSION, BUDGET: BUDGET, BUDGET_SAFE: BUDGET_SAFE, esc: esc, fieldSep: FIELD_SEP, looseSep: LOOSE_SEP, numberInRange: numberInRange, presence: presence, threshold: threshold, build: build, fit: fit, selfTest: selfTest };
-});
-
 (function () {
   "use strict";
   var D = window.POE2_DATA || { waystone: [], tablet: [] };
@@ -209,7 +10,8 @@
   var HV = window.POE2_HIGHVALUE || {};
   var $ = function (id) { return document.getElementById("rex-" + id); };
 
-  var KEY = "poe2.regex.v7";
+  var KEY = "poe2.regex.v8";
+  var LEGACY_KEYS = ["poe2.regex.v7"];
   var TABS = ["waystone", "tablet"];
   var RATE = { E: 1, C: 56, D: 468 };
   var HOT_IDS = ["wt025", "wt026", "wt027", "wt023", "wt022", "wt024"];
@@ -217,7 +19,7 @@
   function freshPage() {
     return {
       prefix: true, suffix: true, search: "", match: "all",
-      types: [], basic: { revives: "", rarities: [] }, selected: {},
+      types: [], basic: { revives: "", rarities: [], corruption: "" }, selected: {},
       tierMin: "", tierMax: "",
       summary: { eff: "", itemRarity: "", monsterRarity: "", packSize: "", waystone: "" }
     };
@@ -225,7 +27,7 @@
 
   function defaults() {
     var o = {
-      version: 7, language: "en", tab: "waystone",
+      version: 8, language: "cn", tab: "waystone",
       presets: { waystone: [], tablet: [] },
       hvPrice: "", hvCurrency: "E", hvTypes: []
     };
@@ -236,7 +38,7 @@
   function allAffixes() { return D.waystone.concat(D.tablet); }
 
   function sanitizeSnapshot(src) {
-    var out = { prefix: true, suffix: true, match: "all", types: [], basic: {}, selected: {}, summary: {}, tierMin: "", tierMax: "" };
+    var out = { prefix: true, suffix: true, match: "all", types: [], basic: { revives: "", rarities: [], corruption: "" }, selected: {}, summary: {}, tierMin: "", tierMax: "" };
     if (!src || typeof src !== "object") return out;
     if (typeof src.prefix === "boolean") out.prefix = src.prefix;
     if (typeof src.suffix === "boolean") out.suffix = src.suffix;
@@ -275,8 +77,9 @@
 
   function restore(raw) {
     var out = defaults();
-    if (!raw || (raw.version < 1 || raw.version > 7)) return out;
+    if (!raw || (raw.version < 1 || raw.version > 8)) return out;
     if (TABS.indexOf(raw.tab) >= 0) out.tab = raw.tab;
+    if (raw.language && (raw.language === "cn" || raw.language === "tw" || raw.language === "en")) out.language = raw.language;
     if (raw.hvCurrency && Object.prototype.hasOwnProperty.call(RATE, raw.hvCurrency)) out.hvCurrency = raw.hvCurrency;
     if (typeof raw.hvPrice === "string" || typeof raw.hvPrice === "number") out.hvPrice = String(raw.hvPrice).slice(0, 8);
     if (Array.isArray(raw.hvTypes)) {
@@ -339,7 +142,16 @@
   }
 
   var state = defaults(), storageOK = true;
-  try { state = restore(JSON.parse(localStorage.getItem(KEY) || "null")); } catch (e) { storageOK = false; }
+  try {
+    var rawJson = localStorage.getItem(KEY);
+    if (!rawJson) {
+      for (var lk = 0; lk < LEGACY_KEYS.length; lk++) {
+        rawJson = localStorage.getItem(LEGACY_KEYS[lk]);
+        if (rawJson) break;
+      }
+    }
+    state = restore(JSON.parse(rawJson || "null"));
+  } catch (e) { storageOK = false; }
 
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); storageOK = true; }
@@ -350,17 +162,22 @@
 
   function tr(key) { var v = I.t[key]; if (!v) return key; return v[state.language] || v.cn || key; }
   function loc(obj) { if (!obj) return null; return obj[state.language] || obj.cn || obj.en || null; }
-  function nameOfType(id) { var t = I.tabletTypes.filter(function (x) { return x.id === id; })[0]; return t ? loc(t) : id; }
+  function typeObjOf(id) {
+    for (var i = 0; i < I.tabletTypes.length; i++) if (I.tabletTypes[i].id === id) return I.tabletTypes[i];
+    return null;
+  }
+  function nameOfType(id) { var t = typeObjOf(id); return t ? loc(t) : id; }
+  function stemOfType(id) { var t = typeObjOf(id); return t && t.stem ? loc(t.stem) : nameOfType(id); }
   function html(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function page() { return state[state.tab]; }
   function affixById(id) { var all = allAffixes(); for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i]; return null; }
 
   var SUMMARY_FIELDS = [
-    { id: "itemRarity", label: "smItemRarity", prefix: { cn: "物品稀有度", tw: "物品稀有度", en: "Item Rarity" } },
-    { id: "packSize", label: "smPackSize", prefix: { cn: "怪物群规模", tw: "怪群大小", en: "Pack Size" } },
-    { id: "eff", label: "smEff", prefix: { cn: "怪物效能", tw: "怪物效能", en: "Monster Effectiveness" } },
-    { id: "monsterRarity", label: "smMonsterRarity", prefix: { cn: "怪物稀有度", tw: "怪物稀有度", en: "Monster Rarity" } },
-    { id: "waystone", label: "smWaystone", prefix: { cn: "引路石掉落几率", tw: "換界石掉落機率", en: "WayStone Drop Chance" } }
+    { id: "itemRarity", label: "smItemRarity", regexPrefix: { cn: "物品稀有度", tw: "物品稀有度", en: "Item Rarity" } },
+    { id: "packSize", label: "smPackSize", regexPrefix: { cn: "怪物群规模", tw: "怪物?群大小", en: "(?:Monster )?Pack Size" }, isRegexPrefix: true },
+    { id: "eff", label: "smEff", regexPrefix: { cn: "怪物(?:强度|效能)", tw: "怪物(?:效用|效能)", en: "Monster Effectiveness" }, isRegexPrefix: true },
+    { id: "monsterRarity", label: "smMonsterRarity", regexPrefix: { cn: "怪物稀有度", tw: "怪物稀有度", en: "Monster Rarity" } },
+    { id: "waystone", label: "smWaystone", regexPrefix: { cn: "引路石掉落几率", tw: "換界石掉落機率", en: "Waystone Drop Chance" } }
   ];
 
   function filtered() {
@@ -368,10 +185,12 @@
     if (tab === "tablet" && !p.types.length) return [];
     var q = p.search.trim().toLowerCase();
     return (D[tab] || []).filter(function (a) {
-      if (!p[a.side === "suffix" ? "suffix" : "prefix"]) return false;
+      // 传奇石板始终独立展现；普通前后缀受前后缀开关控制
+      if (!a.unique && !p[a.side === "suffix" ? "suffix" : "prefix"]) return false;
       if (tab === "tablet" && a.types && a.types.length && p.types.length && !a.types.some(function (t) { return p.types.indexOf(t) >= 0; })) return false;
       if (q) {
-        var hay = [loc(a.tpl), a.tpl.cn, a.tpl.tw, a.tpl.en].filter(Boolean).join(" ").toLowerCase();
+        var modNames = a.modName ? [a.modName.cn, a.modName.tw, a.modName.en] : [];
+        var hay = [loc(a.tpl), a.tpl.cn, a.tpl.tw, a.tpl.en].concat(modNames).filter(Boolean).join(" ").toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
       return true;
@@ -387,18 +206,57 @@
     return t ? [t] : [];
   }
 
-  function fragmentFor(a, sel) {
-    var lines = affixLines(a);
-    if (!lines || !lines.length) return null;
-    var text = lines.join(" ");
-    if (sel && sel.mode === "include" && (sel.value !== "" || sel.value2 !== "")) {
-      var t = R.threshold(text, { atLeast: sel.value !== "" ? Number(sel.value) : undefined, atMost: sel.value2 !== "" ? Number(sel.value2) : undefined });
-      if (t) return t;
-    }
-    return R.presence(text);
+  function parseOptNum(raw) {
+    if (raw === undefined || raw === null) return undefined;
+    var s = String(raw).trim();
+    if (!s || s === "-" || s === "+") return undefined;
+    var n = Number(s);
+    return isNaN(n) ? undefined : n;
   }
 
-  function tierFragments(p, tab) {
+  /**
+   * 为单条词缀生成正则片段：
+   * - 绝不跨 `\n` 拼接多行复合词缀（取第 1 行主语义确保游戏内逐行命中）
+   * - opts.compact = true 时使用语料库算出的无碰撞最短片段 + 保留数值门槛
+   * - opts.relaxNumbers = true 时在保持文本区别的前提下放宽数值匹配
+   */
+  function fragmentFor(a, sel, opts) {
+    opts = opts || {};
+    var tab = opts.tab || state.tab;
+    var lang = opts.lang || state.language;
+    var lines = (a.lines && a.lines[lang]) || affixLines(a);
+    if (!lines || !lines.length) return null;
+
+    var mainLine = lines[0];
+    var corpusMap = R.getCorpusMap(D[tab] || D.tablet, lang);
+    var corpusEntry = corpusMap[a.id];
+
+    var hasMin = sel && sel.mode === "include" && parseOptNum(sel.value) !== undefined;
+    var hasMax = sel && sel.mode === "include" && parseOptNum(sel.value2) !== undefined;
+    var tOpts = {
+      atLeast: hasMin ? parseOptNum(sel.value) : undefined,
+      atMost: hasMax ? parseOptNum(sel.value2) : undefined,
+      lang: lang,
+      stackMax: a.stackMax,
+      compact: !!opts.compact,
+      relaxNumbers: !!opts.relaxNumbers
+    };
+
+    if (hasMin || hasMax) {
+      // 用户填写门槛时即便是默认层级也优先检测有效性（若填反如 20..10 则返回 null）
+      var thr = opts.compact
+        ? R.compactThreshold(a, corpusEntry, tOpts)
+        : R.threshold(mainLine, tOpts);
+      return thr || null;
+    }
+
+    if (opts.compact && corpusEntry && corpusEntry.presence) {
+      return corpusEntry.presence;
+    }
+    return R.presence(mainLine, { lang: lang, compact: !!opts.compact });
+  }
+
+  function tierFragments(p, tab, compact) {
     var out = [];
     if (tab !== "waystone") return out;
     var min = p.tierMin ? parseInt(p.tierMin, 10) : null;
@@ -409,81 +267,159 @@
     if (min < 1) min = 1;
     if (max > 16) max = 16;
     if (min > max) { var tmp = min; min = max; max = tmp; }
+    if (min === 1 && max === 16) return out;
     var range = R.numberInRange(min, max);
     if (!range) return out;
-    var pre = state.language === "en" ? "Tier\\s*" : state.language === "tw" ? "階級\\s*" : "\\s*";
-    var suf = state.language === "en" ? "" : state.language === "tw" ? "\\s*" : "\\s*阶";
-    out.push(pre + range + suf);
+    var lang = state.language;
+    if (lang === "en") out.push((compact ? "r " : "Tier\\s+") + range + "\\)");
+    else if (lang === "tw") out.push((compact ? "級\\s*" : "階級\\s*") + range + "[）)]");
+    else out.push((compact ? "[（(]\\s*" : "[（(]\\s*") + range + "\\s*阶[）)]");
     return out;
   }
 
-  function summaryFragments(p, tab) {
+  function summaryFragments(p, tab, compact) {
     var out = [];
     if (tab !== "waystone") return out;
     SUMMARY_FIELDS.forEach(function (f) {
       var raw = p.summary[f.id];
       if (raw === "" || raw == null) return;
       var min = parseInt(raw, 10);
-      if (isNaN(min) || (!f.zeroOk && min <= 0) || min < 0) return;
-      var prefix = loc(f.prefix);
+      if (isNaN(min) || min <= 0) return;
+      var prefixRaw = loc(f.regexPrefix);
+      var prefix = f.isRegexPrefix ? prefixRaw : R.esc(prefixRaw);
       var range = R.numberInRange(min, f.max || 999);
-      if (prefix && range) out.push(R.esc(prefix) + R.fieldSep + range + (f.noPercent ? "" : "%"));
+      if (prefix && range) {
+        var sep = compact ? "\\s*[:：]\\s*\\+?" : R.fieldSep;
+        out.push(prefix + sep + range + "%");
+      }
     });
     return out;
   }
 
-  function compose() {
-    var p = page(), tab = state.tab;
-    var includes = [], excludes = [], always = [], unresolved = [];
-    var selIds = Object.keys(p.selected);
-    for (var i = 0; i < selIds.length; i++) {
-      var id = selIds[i], sel = p.selected[id];
-      var a = affixById(id);
-      if (!a) continue;
-      var frag = fragmentFor(a, sel);
-      if (!frag) { unresolved.push(loc(a.tpl) || id); continue; }
-      (sel.mode === "exclude" ? excludes : includes).push(frag);
-    }
-    var smFrags = summaryFragments(p, tab);
+  function buildAlwaysBlocks(p, tab, compact) {
+    var always = [];
+    var lang = state.language;
+    var smFrags = summaryFragments(p, tab, compact);
     for (var s = 0; s < smFrags.length; s++) always.push(smFrags[s]);
-    var tf = tierFragments(p, tab);
+    var tf = tierFragments(p, tab, compact);
     for (var ti = 0; ti < tf.length; ti++) always.push(tf[ti]);
-    if (tab === "tablet" && p.types.length) {
-      var names = p.types.map(function (t) { return nameOfType(t); }).filter(Boolean);
-      if (names.length) always.push("(" + names.map(R.esc).join("|") + ")");
+
+    // 石板类型底材锚点（全部 8 种全选或未选时自动省略；多选合并为一个清晰底材正则以免与词缀正文“深渊/裂隙”混淆）
+    if (tab === "tablet" && p.types.length > 0 && p.types.length < I.tabletTypes.length) {
+      var stems = p.types.map(stemOfType).filter(Boolean).map(R.esc);
+      if (stems.length) {
+        var baseSuf = lang === "en" ? " Tablet" : lang === "tw" ? "碑牌" : "石板";
+        if (stems.length === 1) always.push(stems[0] + baseSuf);
+        else always.push("(" + stems.join("|") + ")" + baseSuf);
+      }
     }
-    if (p.basic.rarities && p.basic.rarities.length) {
+
+    // 稀有度过滤（全部可选稀有度都选中或全未选时自动省略）
+    var maxRarCount = (tab === "waystone" ? 3 : 4);
+    if (p.basic.rarities && p.basic.rarities.length > 0 && p.basic.rarities.length < maxRarCount) {
       var rarLine = loc(I.anchors.rarityLine) || "";
       var rarWord = p.basic.rarities.map(function (k) {
-        var t = loc(I.anchors[k]);
-        return t ? R.presence(t, 1) : null;
+        return R.esc(loc(I.anchors[k]) || "");
       }).filter(Boolean);
-      if (rarLine && rarWord.length) always.push(R.esc(rarLine) + R.fieldSep + ".*(?:" + rarWord.join("|") + ")");
+      if (rarLine && rarWord.length) {
+        var rarJoined = rarWord.length === 1 ? rarWord[0] : "(" + rarWord.join("|") + ")";
+        always.push((compact && lang === "en" ? "y: " : R.esc(rarLine) + "\\s*[:：]\\s*") + rarJoined);
+      }
     }
+
+    // 复活次数（仅引路石）
     if (tab === "waystone" && p.basic.revives !== "" && p.basic.revives != null) {
       var revLbl = loc(I.t.revivesLabel);
-      if (revLbl) always.push(R.esc(revLbl) + R.looseSep + p.basic.revives);
+      if (revLbl) {
+        var revPre = compact && lang === "en" ? "le: "
+          : (lang === "cn" ? "(?:可用)?复活次数" : R.esc(revLbl)) + "\\s*[:：]?\\s*";
+        always.push(revPre + p.basic.revives);
+      }
     }
-    if (p.basic.corruption === "no") excludes.push(R.esc(loc(I.anchors.corrupted)));
-    if (p.basic.corruption === "yes") always.push(R.esc(loc(I.anchors.corrupted)));
-    always = always.filter(Boolean);
+
+    if (p.basic.corruption === "yes") always.push(loc(I.anchors.corrupted));
+    return always.filter(Boolean);
+  }
+
+  /**
+   * 检测当前处于“仅魔法石板”模式时，是否需要附加官方词缀名来进一步区分同文本前缀/后缀
+   */
+  function needsMagicModNameAnchor(a, sel, p, tab) {
+    if (tab !== "tablet" || !sel || sel.mode !== "include") return false;
+    if (!a.modName || !a.statGroup) return false;
+    var rars = p.basic.rarities || [];
+    if (rars.length !== 1 || rars[0] !== "magic") return false;
+    if (p.match === "any") return false;
+    var minVal = parseOptNum(sel.value);
+    // 如果后缀明确要求 >=2，数值本身已经彻底排除了 +1 前缀，无需再耗字符拼词缀名
+    if (minVal !== undefined && minVal >= 2) return false;
+    return true;
+  }
+
+  function compose() {
+    var p = page(), tab = state.tab;
+    var unresolved = [];
+    var selIds = Object.keys(p.selected);
+
+    function collectAffixLists(opts) {
+      var incs = [], excs = [];
+      for (var i = 0; i < selIds.length; i++) {
+        var id = selIds[i], sel = p.selected[id];
+        var a = affixById(id);
+        if (!a) continue;
+        var frag = fragmentFor(a, sel, opts);
+        if (!frag) {
+          if (opts.recordUnresolved) unresolved.push(loc(a.tpl) || id);
+          continue;
+        }
+        if (sel.mode === "exclude") {
+          excs.push(frag);
+        } else {
+          incs.push(frag);
+          if (needsMagicModNameAnchor(a, sel, p, tab)) {
+            var mName = loc(a.modName);
+            if (mName) incs.push(R.esc(mName));
+          }
+        }
+      }
+      if (p.basic.corruption === "no") excs.push(loc(I.anchors.corrupted));
+      return { includes: incs, excludes: excs };
+    }
+
+    // 三级生成策略：
+    // Level 0: 完整清晰原文版（含精确数值门槛）
+    // Level 1: 语料库无碰撞最短片段版（仍保留全部精确数值门槛！）
+    // Level 2: 仅当超 248 字符时退化为无门槛最短片段版（绝不粗暴破坏数字字符类）
+    var d0 = collectAffixLists({ compact: false, relaxNumbers: false, recordUnresolved: true });
+    var d1 = collectAffixLists({ compact: true, relaxNumbers: false });
+    var d2 = collectAffixLists({ compact: true, relaxNumbers: true });
+
+    var alwaysFull = buildAlwaysBlocks(p, tab, false);
+    var alwaysCompact = buildAlwaysBlocks(p, tab, true);
 
     var levels = [
-      { includes: includes, excludes: excludes, always: always, match: p.match },
-      { includes: includes.map(function (s2) { return s2.replace(/\[\d-\d\]|\[0-9\]|\([0-9|\[\]\-]+\)/g, "[0-9]"); }), excludes: excludes, always: always, match: p.match }
+      { includes: d0.includes, excludes: d0.excludes, always: alwaysFull, match: p.match },
+      { includes: d1.includes, excludes: d1.excludes, always: alwaysCompact, match: p.match },
+      { includes: d2.includes, excludes: d2.excludes, always: alwaysCompact, match: p.match }
     ];
     var fitted = R.fit(levels, R.BUDGET_SAFE);
 
+    var smActiveCount = SUMMARY_FIELDS.filter(function (f) { return p.summary[f.id]; }).length;
+    var hasTier = (tab === "waystone" && (p.tierMin || p.tierMax) && !(p.tierMin === "1" && p.tierMax === "16")) ? 1 : 0;
+    var hasTypeFilter = (tab === "tablet" && p.types.length > 0 && p.types.length < I.tabletTypes.length) ? 1 : 0;
+    var maxRar = tab === "waystone" ? 3 : 4;
+    var hasRarity = (p.basic.rarities && p.basic.rarities.length > 0 && p.basic.rarities.length < maxRar) ? 1 : 0;
+
     return {
-      ok: fitted.level >= 0 && !fitted.empty,
+      ok: fitted.level >= 0 && !fitted.empty && unresolved.length === 0,
       source: fitted.source || "",
       length: fitted.length || 0,
       level: fitted.level,
       over: !!fitted.over,
       unresolved: unresolved,
-      count: selIds.length + smFrags.length + tf.length +
+      count: selIds.length + smActiveCount + hasTier + hasTypeFilter +
         ((tab === "waystone" && p.basic.revives !== "" && p.basic.revives != null) ? 1 : 0) +
-        ((p.basic.rarities && p.basic.rarities.length) ? 1 : 0)
+        hasRarity + (p.basic.corruption ? 1 : 0)
     };
   }
 
@@ -650,21 +586,31 @@
     return Math.round(e) + "E";
   }
 
-  function hvBuild(item) {
-    var frags = [];
-    for (var i = 0; i < item.a.length; i++) {
-      var id = item.a[i][0], min = item.a[i][1];
-      var a = affixById(id);
-      if (!a) continue;
-      var text = loc(a.tpl);
-      if (!text) continue;
-      var frag = min != null ? R.threshold(text, { atLeast: min }) : null;
-      if (!frag) frag = R.presence(text);
-      if (frag) frags.push(frag);
+  /**
+   * 为高价值碑牌组合生成精准且自动压缩的安全正则（≤ 250 字符，完整支持 2+/3+ 叠加与英文单复数）
+   */
+  function hvBuild(item, tid) {
+    function genList(compact) {
+      var frags = [];
+      for (var i = 0; i < item.a.length; i++) {
+        var id = item.a[i][0], min = item.a[i][1];
+        var a = affixById(id);
+        if (!a) continue;
+        var fakeSel = min != null ? { mode: "include", value: String(min), value2: "" } : { mode: "include", value: "", value2: "" };
+        var frag = fragmentFor(a, fakeSel, { tab: "tablet", lang: state.language, compact: compact, relaxNumbers: false });
+        if (frag) frags.push(frag);
+      }
+      return frags;
     }
-    if (!frags.length) return null;
-    var built = R.build({ includes: frags, match: "all" });
-    return built.ok ? built : null;
+    var f0 = genList(false);
+    var f1 = genList(true);
+    if (!f0.length && !f1.length) return null;
+    // 同时附带底材类型（单选高价值时用户按类型浏览，或直接保留词缀正则便于贴进市集/仓库搜索）
+    var fitted = R.fit([
+      { includes: f0, match: "all" },
+      { includes: f1, match: "all" }
+    ], R.BUDGET_SAFE);
+    return (fitted.level >= 0 && !fitted.empty) ? fitted : null;
   }
 
   function renderHighValue() {
@@ -689,7 +635,7 @@
     types.forEach(function (tid) {
       (HV[tid] || []).forEach(function (item) {
         if (minE > 0 && item.p < minE) return;
-        var built = hvBuild(item);
+        var built = hvBuild(item, tid);
         if (built) rows.push({ tid: tid, item: item, built: built });
       });
     });
@@ -791,29 +737,48 @@
       host.innerHTML = '<div class="empty-mini">' + html(msg) + "</div>";
       return;
     }
-    var groups = {}, order = [];
+    var groups = { prefix: [], suffix: [], unique: [] };
     list.forEach(function (a) {
-      var key = a.side;
-      if (!groups[key]) { groups[key] = []; order.push(key); }
-      groups[key].push(a);
+      if (a.unique) groups.unique.push(a);
+      else if (a.side === "suffix") groups.suffix.push(a);
+      else groups.prefix.push(a);
     });
+    var order = ["prefix", "suffix", "unique"].filter(function (k) { return groups[k].length > 0; });
     var out = [];
     order.forEach(function (key) {
-      out.push('<div class="rex-group-label">' + html(key === "suffix" ? tr("suffix") : tr("prefix")) + "</div>");
+      var gTitle = key === "unique" ? tr("uniqueGroup") : (key === "suffix" ? tr("suffix") : tr("prefix"));
+      out.push('<div class="rex-group-label">' + html(gTitle) + "</div>");
       groups[key].forEach(function (a) {
         var sel = p.selected[a.id];
         var cls = "rex-affix-row" + (a.composite ? " composite" : "") + (sel ? (sel.mode === "include" ? " inc" : " exc") : "");
         out.push('<div class="' + cls + '" data-id="' + html(a.id) + '">');
-        out.push('<span class="rex-affix-text">' + affixTextHtml(a) + "</span>");
-        out.push('<span class="gen-badge ' + (a.side === "suffix" ? "s" : "p") + '">' + html(a.side === "suffix" ? tr("suffix") : tr("prefix")) + "</span>");
+        out.push('<span class="rex-affix-text">' + affixTextHtml(a));
+        if (a.modName) {
+          var mn = loc(a.modName);
+          if (mn) out.push(' <span class="rex-mod-name">' + html(mn) + "</span>");
+        }
+        out.push("</span>");
+        if (a.unique) {
+          out.push('<span class="gen-badge rex-badge-unique">' + html(tr("uniqueTag")) + "</span>");
+        } else {
+          if (a.types && a.types.length === 1) {
+            out.push('<span class="rex-badge-exclusive">' + html(stemOfType(a.types[0]) + " " + tr("exclusiveTag")) + "</span>");
+          }
+          out.push('<span class="gen-badge ' + (a.side === "suffix" ? "s" : "p") + '">' + html(a.side === "suffix" ? tr("suffix") : tr("prefix")) + "</span>");
+        }
         out.push(rowActions());
         if (sel && sel.mode === "include" && a.rng) {
+          var isNeg = a.rng[0] < 0;
+          var minAttr = isNeg ? "-999" : "0";
+          var maxAttr = a.stackMax ? String(Math.max(a.rng[1], a.stackMax, 9)) : "999";
+          var rngHint = tr("referenceRange") + " " + a.rng[0] + "–" + a.rng[1];
+          if (a.stackMax) rngHint += " (" + tr("stackMaxHint") + " " + a.stackMax + ")";
           out.push('<span class="rex-threshold">');
           out.push("<span>" + html(tr("atLeast")) + "</span>");
-          out.push('<input type="number" inputmode="numeric" data-thr="value" min="0" max="999" placeholder="' + html(tr("unlimited")) + '" value="' + html(sel.value || "") + '">');
+          out.push('<input type="number" inputmode="' + (isNeg ? "text" : "numeric") + '" data-thr="value" min="' + minAttr + '" max="' + maxAttr + '" placeholder="' + html(tr("unlimited")) + '" value="' + html(sel.value || "") + '">');
           out.push("<span>" + html(tr("atMost")) + "</span>");
-          out.push('<input type="number" inputmode="numeric" data-thr="value2" min="0" max="999" placeholder="' + html(tr("unlimited")) + '" value="' + html(sel.value2 || "") + '">');
-          out.push('<span class="hint-text">' + html(tr("referenceRange")) + " " + a.rng[0] + "–" + a.rng[1] + "</span>");
+          out.push('<input type="number" inputmode="' + (isNeg ? "text" : "numeric") + '" data-thr="value2" min="' + minAttr + '" max="' + maxAttr + '" placeholder="' + html(tr("unlimited")) + '" value="' + html(sel.value2 || "") + '">');
+          out.push('<span class="hint-text">' + html(rngHint) + "</span>");
           out.push("</span>");
         }
         out.push("</div>");
@@ -827,13 +792,13 @@
     $("condition-count").textContent = res.count;
     var selIds = Object.keys(p.selected);
     var smActive = SUMMARY_FIELDS.filter(function (f) { return p.summary[f.id]; });
-    var hasTier = (p.tierMin || p.tierMax);
+    var hasTier = (state.tab === "waystone" && (p.tierMin || p.tierMax));
     var hasRevives = (state.tab === "waystone" && p.basic.revives !== "" && p.basic.revives != null);
     var rarSel = p.basic.rarities || [];
-    var hasRarity = rarSel.length > 0;
+    var hasRarity = rarSel.length > 0 && rarSel.length < (state.tab === "waystone" ? 3 : 4);
     var summary = $("summary");
 
-    if (!selIds.length && !smActive.length && !hasTier && !hasRevives && !hasRarity) {
+    if (!selIds.length && !smActive.length && !hasTier && !hasRevives && !hasRarity && !p.basic.corruption) {
       summary.innerHTML = '<div class="empty-mini">' + html(tr("noConditions")) + "</div>";
     } else {
       var rows = [];
@@ -847,14 +812,20 @@
         var rarNames = rarSel.map(function (k) { return tr(k === "normal" ? "rarityNormal" : k === "magic" ? "rarityMagic" : k === "rare" ? "rarityRare" : "rarityUnique"); }).join(" / ");
         rows.push('<div class="rex-result-item inc"><span class="mode">=</span><span class="label">' + html(tr("rarity")) + '</span><span class="thr">' + html(rarNames) + "</span></div>");
       }
+      if (p.basic.corruption) {
+        var cCls = p.basic.corruption === "no" ? "exc" : "inc";
+        var cMode = p.basic.corruption === "no" ? "−" : "=";
+        rows.push('<div class="rex-result-item ' + cCls + '"><span class="mode">' + cMode + '</span><span class="label">' + html(p.basic.corruption === "no" ? tr("corruptedNo") : tr("corruptedYes")) + "</span></div>");
+      }
       smActive.forEach(function (f) {
-        rows.push('<div class="rex-result-item inc"><span class="mode">≥</span><span class="label">' + html(tr(f.label)) + '</span><span class="thr">' + html(p.summary[f.id]) + "</span></div>");
+        rows.push('<div class="rex-result-item inc"><span class="mode">≥</span><span class="label">' + html(tr(f.label)) + '</span><span class="thr">' + html(p.summary[f.id]) + "%</span></div>");
       });
       selIds.forEach(function (id) {
         var sel = p.selected[id];
         var a = affixById(id);
         if (!a) return;
         var label = loc(a.tpl) || a.tpl.cn || a.id;
+        if (a.modName && loc(a.modName)) label = "[" + loc(a.modName) + "] " + label;
         var thr = "";
         if (sel.mode === "include" && (sel.value || sel.value2)) {
           thr = (sel.value ? "≥" + sel.value : "") + (sel.value && sel.value2 ? " " : "") + (sel.value2 ? "≤" + sel.value2 : "");
@@ -862,13 +833,14 @@
         rows.push('<div class="rex-result-item ' + (sel.mode === "include" ? "inc" : "exc") + '">' +
           '<span class="mode">' + (sel.mode === "include" ? "+" : "−") + "</span>" +
           '<span class="label" title="' + html(label) + '">' + html(label) + "</span>" +
-          (thr ? '<span class="thr">' + html(thr) + "</span>" : "") + "</div>");
+          (thr ? '<span class="thr">' + html(thr) + "</span>" : "") +
+          '<button type="button" class="rex-result-rm" data-rm-id="' + html(id) + '" title="' + html(tr("favDelete")) + '">×</button></div>');
       });
       summary.innerHTML = '<div class="rex-result-list">' + rows.join("") + "</div>";
     }
 
     var src = $("regex-source"), msg = $("regex-message"), lenEl = $("regex-length");
-    if (!res.ok || !res.source) {
+    if (!res.source || (!res.ok && res.unresolved.length)) {
       src.textContent = "";
       src.classList.add("empty");
       msg.textContent = res.unresolved.length ? (tr("copyDisabled") + "：" + res.unresolved.join(" / ")) : tr("noConditions");
@@ -882,9 +854,8 @@
       lenEl.textContent = res.length + " / " + R.BUDGET;
       lenEl.className = "badge-muted" + (res.over ? " over" : "");
       var notes = [];
-      if (res.level === 1) notes.push(tr("noteLoose"));
-      else if (res.level === 2) notes.push(tr("noteShort"));
-      else if (res.level >= 3) notes.push(tr("noteMini"));
+      if (res.level === 1) notes.push(tr("noteShort"));
+      else if (res.level >= 2) notes.push(tr("noteLoose"));
       if (res.over) notes.push(tr("noteOver"));
       if (res.unresolved.length) notes.push(tr("noteUnready") + "：" + res.unresolved.join(" / "));
       msg.textContent = notes.join(" · ");
@@ -912,6 +883,22 @@
     }
   }
 
+  function pruneIncompatibleSelected(p) {
+    var removed = false;
+    Object.keys(p.selected).forEach(function (id) {
+      var a = affixById(id);
+      if (a && a.types && a.types.length > 0 && p.types.length > 0) {
+        if (!a.types.some(function (t) { return p.types.indexOf(t) >= 0; })) {
+          delete p.selected[id];
+          removed = true;
+        }
+      }
+    });
+    if (removed && window.PoE2ShowFeedback) {
+      window.PoE2ShowFeedback(tr("removedIncompatible"), "info");
+    }
+  }
+
   function bind() {
     if (!$("tabs")) return;
     $("tabs").addEventListener("click", function (e) {
@@ -924,8 +911,7 @@
       state.language = e.target.value;
       save(); renderAll();
       var siteLang = state.language === "en" ? "us" : state.language;
-      var topBtn = document.querySelector('[data-lang="' + siteLang + '"]');
-      if (topBtn && !topBtn.classList.contains("active")) topBtn.click();
+      if (window.PoE2Layout && window.PoE2Layout.getLanguage() !== siteLang) window.PoE2Layout.setLanguage(siteLang);
     });
     $("toggle-prefix").addEventListener("click", function () {
       var p = page(); p.prefix = !p.prefix;
@@ -957,6 +943,7 @@
       if (b.hasAttribute("data-type")) {
         var t = b.getAttribute("data-type"); var i = p.types.indexOf(t);
         if (i >= 0) p.types.splice(i, 1); else p.types.push(t);
+        pruneIncompatibleSelected(p);
         save(); renderList(); renderResult(); renderPrimary();
       } else if (b.hasAttribute("data-revives")) {
         p.basic.revives = b.getAttribute("data-revives"); save(); renderPrimary(); renderResult();
@@ -1022,6 +1009,14 @@
       save(); renderHotBar(); renderList(); renderResult(); renderPrimary();
     });
 
+    $("summary").addEventListener("click", function (e) {
+      var rm = e.target.closest("button[data-rm-id]");
+      if (!rm) return;
+      var id = rm.getAttribute("data-rm-id");
+      delete page().selected[id];
+      save(); renderList(); renderResult(); renderPrimary(); renderHotBar();
+    });
+
     $("fav-save").addEventListener("click", savePreset);
     $("fav-name").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); savePreset(); } });
     $("fav-list").addEventListener("click", function (e) {
@@ -1067,9 +1062,16 @@
       if (!e.target.hasAttribute("data-thr")) return;
       var row = e.target.closest(".rex-affix-row");
       if (!row) return;
-      var sel = page().selected[row.getAttribute("data-id")];
+      var id = row.getAttribute("data-id");
+      var sel = page().selected[id];
       if (!sel) return;
-      sel[e.target.getAttribute("data-thr")] = e.target.value.replace(/[^0-9]/g, "").slice(0, 3);
+      var a = affixById(id);
+      var allowNeg = a && a.rng && a.rng[0] < 0;
+      var rawVal = String(e.target.value || "");
+      var cleaned = allowNeg
+        ? rawVal.replace(/[^0-9\-]/g, "").replace(/(?!^)-/g, "").slice(0, 4)
+        : rawVal.replace(/[^0-9]/g, "").slice(0, 3);
+      sel[e.target.getAttribute("data-thr")] = cleaned;
       save(); renderResult();
     });
 
@@ -1086,10 +1088,18 @@
       renderAll();
     },
     getLanguage: function () { return state.language; },
+    compose: compose,
     renderAll: renderAll
   };
 
   function boot() {
+    if (window.PoE2Layout) {
+      var initLang = window.PoE2Layout.getLanguage();
+      state.language = initLang === "us" ? "en" : (initLang === "tw" ? "tw" : "cn");
+      window.PoE2Layout.onLanguageChange(function (siteLang) {
+        if (window.PoE2RegexTool) window.PoE2RegexTool.setLanguage(siteLang);
+      });
+    }
     var st = R.selfTest();
     if (!st.ok && window.console) console.warn("regex engine self-test failed", st.fails);
     bind();
